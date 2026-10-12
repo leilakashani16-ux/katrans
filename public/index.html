@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="description" content="سیستم گردش مواد اولیه و تولید کترینگ" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="گردش مواد" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-192.png" />
+  <title>سیستم گردش مواد اولیه و تولید کترینگ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jalaali-js@1.2.7/dist/jalaali.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Vazirmatn', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: {
+              50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7',
+              400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857',
+              800: '#065f46', 900: '#064e3b'
+            },
+            accent: { 400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed' },
+            slate: { 850: '#141c2b', 950: '#070b14' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Vazirmatn', system-ui, sans-serif; box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      background: #070b14;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(16,185,129,0.18), transparent 50%),
+        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(139,92,246,0.12), transparent 45%),
+        radial-gradient(ellipse 50% 30% at 50% 100%, rgba(6,182,212,0.08), transparent 40%),
+        linear-gradient(180deg, #070b14 0%, #0c1222 100%);
+      background-attachment: fixed;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: 0.4;
+    }
+    #login-screen, #app, #install-banner, #toast, #modal-root { position: relative; z-index: 1; }
+
+    .glass {
+      background: linear-gradient(145deg, rgba(22,30,48,0.85), rgba(15,22,38,0.75));
+      backdrop-filter: blur(20px) saturate(1.3);
+      -webkit-backdrop-filter: blur(20px) saturate(1.3);
+      border: 1px solid rgba(148,163,184,0.12);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .glass-card {
+      background: linear-gradient(160deg, rgba(24,33,52,0.7), rgba(16,24,40,0.55));
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(148,163,184,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+    .glass-card:hover {
+      border-color: rgba(16,185,129,0.25);
+      box-shadow: 0 8px 32px rgba(16,185,129,0.08);
+    }
+
+    .input-field {
+      width: 100%; padding: 0.7rem 1rem; border-radius: 0.85rem;
+      background: rgba(8,12,22,0.65);
+      border: 1px solid rgba(71,85,105,0.45);
+      color: #f1f5f9; transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .input-field:focus {
+      outline: none; border-color: rgba(16,185,129,0.6);
+      box-shadow: 0 0 0 3px rgba(16,185,129,0.15);
+    }
+    .input-field::placeholder { color: #64748b; }
+
+    .btn-primary {
+      padding: 0.7rem 1.35rem; border-radius: 0.85rem; font-weight: 600;
+      background: linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%);
+      color: white; border: none; cursor: pointer;
+      box-shadow: 0 4px 20px rgba(16,185,129,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+      transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
+    }
+    .btn-primary:hover { filter: brightness(1.08); box-shadow: 0 6px 28px rgba(16,185,129,0.45); }
+    .btn-primary:active { transform: scale(0.97); }
+
+    .btn-secondary {
+      padding: 0.65rem 1.2rem; border-radius: 0.85rem; cursor: pointer;
+      background: rgba(30,41,59,0.7); color: #e2e8f0;
+      border: 1px solid rgba(71,85,105,0.5); transition: all 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(51,65,85,0.85); border-color: rgba(148,163,184,0.3); }
+    .btn-danger { padding: 0.5rem 1rem; border-radius: 0.6rem; background: linear-gradient(135deg,#dc2626,#ef4444); color: white; border: none; cursor: pointer; }
+    .btn-ghost { padding: 0.35rem 0.7rem; border-radius: 0.5rem; color: #94a3b8; background: transparent; border: none; cursor: pointer; }
+    .btn-ghost:hover { background: rgba(51,65,85,0.5); color: #e2e8f0; }
+
+    .table-wrap { overflow-x: auto; border-radius: 1rem; }
+    table.data { width: 100%; border-collapse: collapse; }
+    table.data th {
+      padding: 0.85rem 1rem; text-align: right; font-size: 0.7rem; font-weight: 700;
+      color: #64748b; text-transform: uppercase; letter-spacing: 0.04em;
+      background: rgba(8,12,22,0.6); position: sticky; top: 0; backdrop-filter: blur(8px);
+    }
+    table.data td { padding: 0.8rem 1rem; font-size: 0.875rem; color: #e2e8f0; border-top: 1px solid rgba(51,65,85,0.35); }
+    table.data tr { transition: background 0.15s; }
+    table.data tr:hover td { background: rgba(16,185,129,0.06); }
+
+    .badge { display: inline-flex; align-items: center; padding: 0.15rem 0.65rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.02em; }
+    .badge-ok { background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.25); }
+    .badge-warn { background: rgba(245,158,11,0.15); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+    .badge-danger { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.25); }
+
+    .sidebar-link {
+      display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 1rem;
+      border-radius: 0.85rem; color: #94a3b8; cursor: pointer; transition: all 0.2s; border: 1px solid transparent;
+    }
+    .sidebar-link:hover { background: rgba(51,65,85,0.4); color: #f1f5f9; }
+    .sidebar-link.active {
+      background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.08));
+      color: #6ee7b7; border-color: rgba(16,185,129,0.3);
+      box-shadow: 0 0 20px rgba(16,185,129,0.1);
+    }
+
+    .stat-card {
+      background: linear-gradient(160deg, rgba(24,33,52,0.75), rgba(16,24,40,0.5));
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: 1.15rem; padding: 1.35rem;
+      display: flex; flex-direction: column; gap: 0.35rem;
+      position: relative; overflow: hidden;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .stat-card::after {
+      content: ''; position: absolute; top: -40%; left: -20%; width: 60%; height: 80%;
+      background: radial-gradient(circle, rgba(16,185,129,0.12), transparent 70%);
+      pointer-events: none;
+    }
+    .stat-card:hover { transform: translateY(-2px); border-color: rgba(16,185,129,0.3); }
+
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center; padding: 1rem;
+    }
+    .modal {
+      background: linear-gradient(160deg, rgba(22,30,48,0.97), rgba(12,18,32,0.95));
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(148,163,184,0.15);
+      border-radius: 1.25rem; padding: 1.75rem; width: 100%; max-width: 32rem;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(16,185,129,0.08);
+    }
+    .toast {
+      position: fixed; bottom: 1.5rem; left: 1.5rem; z-index: 100;
+      padding: 0.85rem 1.35rem; border-radius: 0.9rem;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4); font-size: 0.875rem; font-weight: 500;
+      transition: all 0.3s; backdrop-filter: blur(12px);
+    }
+    .alert-banner {
+      background: linear-gradient(105deg, rgba(239,68,68,0.12), rgba(245,158,11,0.1));
+      border: 1px solid rgba(239,68,68,0.28);
+      border-radius: 1.1rem; padding: 1.1rem 1.35rem;
+      box-shadow: 0 4px 24px rgba(239,68,68,0.08);
+    }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+    .fade-in { animation: fadeIn 0.35s cubic-bezier(0.22,1,0.36,1); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(16,185,129,0.2); }
+      50% { box-shadow: 0 0 36px rgba(16,185,129,0.4); }
+    }
+    .logo-glow { animation: pulse-glow 3s ease-in-out infinite; }
+
+    .filter-bar { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; align-items: center; }
+    .filter-bar input, .filter-bar select { max-width: 180px; }
+
+    #login-screen .glass {
+      border: 1px solid rgba(16,185,129,0.15);
+      box-shadow: 0 25px 80px rgba(0,0,0,0.5), 0 0 60px rgba(16,185,129,0.08);
+    }
+
+    @media (max-width: 768px) {
+      #sidebar {
+        width: 100% !important; height: auto !important;
+        top: auto !important; bottom: 0 !important; right: 0 !important; left: 0 !important;
+        flex-direction: row !important; border-left: none !important;
+        border-top: 1px solid rgba(148,163,184,0.12);
+        z-index: 40; padding-bottom: env(safe-area-inset-bottom);
+        background: rgba(8,12,22,0.92) !important; backdrop-filter: blur(20px);
+      }
+      #sidebar > div:first-child, #sidebar > div:last-child { display: none !important; }
+      #nav-links {
+        display: flex !important; flex-direction: row !important; overflow-x: auto !important;
+        width: 100%; padding: 0.4rem !important; gap: 0.15rem; -webkit-overflow-scrolling: touch;
+      }
+      .sidebar-link {
+        flex-direction: column !important; font-size: 0.62rem !important;
+        padding: 0.45rem 0.5rem !important; gap: 0.15rem !important;
+        white-space: nowrap; min-width: 3.4rem; text-align: center;
+      }
+      .sidebar-link span:first-child { font-size: 1.15rem; }
+      main.flex-1 { margin-right: 0 !important; margin-bottom: 4.5rem !important; padding: 1rem !important; }
+    }
+  </style>
+</head>
+<body class="text-slate-100 antialiased">
+  <!-- Login Screen -->
+  <div id="login-screen" class="min-h-screen flex items-center justify-center p-4">
+    <div class="glass rounded-3xl p-8 w-full max-w-md shadow-2xl fade-in">
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-400 via-brand-500 to-teal-600 flex items-center justify-center text-3xl logo-glow">🍽️</div>
+        <h1 class="text-2xl font-bold text-white tracking-tight">سیستم گردش مواد اولیه</h1>
+        <p class="text-slate-400 mt-1.5 text-sm">کترینگ • مدیریت تولید و موجودی ابری</p>
+      </div>
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label class="block text-sm text-slate-400 mb-1.5">نام کاربری</label>
+          <input type="text" id="login-user" class="input-field" placeholder="نام کاربری" required autocomplete="username" />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-400 mb-1.5">رمز عبور</label>
+          <input type="password" id="login-pass" class="input-field" placeholder="رمز عبور" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn-primary w-full mt-2">ورود به سیستم</button>
+      </form>
+      <div id="cloud-status" class="mt-6 pt-4 border-t border-slate-700/50 text-xs text-center text-slate-500">
+        در حال بررسی اتصال ابری...
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="hidden min-h-screen flex">
+    <aside id="sidebar" class="w-64 glass border-l border-slate-700/40 flex flex-col fixed right-0 top-0 bottom-0 z-40">
+      <div class="p-5 border-b border-slate-700/40">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-lg">🍽️</div>
+          <div>
+            <div class="font-bold text-sm">گردش مواد</div>
+            <div class="text-xs text-slate-400" id="user-role-label">—</div>
+          </div>
+        </div>
+      </div>
+      <nav class="flex-1 p-3 space-y-1 overflow-y-auto" id="nav-links"></nav>
+      <div class="p-4 border-t border-slate-700/40 space-y-2">
+        <div class="text-xs text-slate-400 px-2" id="user-name-label"></div>
+        <button onclick="logout()" class="btn-secondary w-full text-sm">خروج</button>
+      </div>
+    </aside>
+    <main class="flex-1 mr-64 p-6 overflow-y-auto">
+      <div id="page-content" class="fade-in max-w-7xl mx-auto"></div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="modal-root"></div>
+
+  <!-- دکمه نصب اپ روی گوشی -->
+  <div id="install-banner" class="hidden fixed bottom-0 left-0 right-0 z-[90] p-4" style="padding-bottom: max(1rem, env(safe-area-inset-bottom));">
+    <div class="glass rounded-2xl p-4 flex items-center gap-3 shadow-2xl max-w-lg mx-auto border border-brand-500/30">
+      <img src="icons/icon-96.png" alt="" class="w-12 h-12 rounded-xl flex-shrink-0" />
+      <div class="flex-1 min-w-0">
+        <div class="font-bold text-sm">نصب اپلیکیشن</div>
+        <div class="text-xs text-slate-400">روی صفحه اصلی گوشی نصب کنید</div>
+      </div>
+      <button id="install-btn" class="btn-primary text-sm whitespace-nowrap">نصب</button>
+      <button id="install-dismiss" class="btn-ghost text-xs text-slate-400">بعداً</button>
+    </div>
+  </div>
+
+  <script src="js/db.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/pages.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
