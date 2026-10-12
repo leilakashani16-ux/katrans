@@ -36,13 +36,31 @@ async function verifyPassword(plain, hash) {
   return plain === hash;
 }
 
+/** Base64 safe for Persian / UTF-8 (btoa alone throws on non-Latin1) */
+function utf8ToB64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64ToUtf8(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
 function parseAuth(req) {
   const h = req.headers.get('Authorization') || '';
   if (!h.startsWith('Bearer ')) return null;
   try {
-    return JSON.parse(atob(h.slice(7)));
+    return JSON.parse(b64ToUtf8(h.slice(7)));
   } catch {
-    return null;
+    try {
+      return JSON.parse(atob(h.slice(7))); // legacy tokens
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -224,8 +242,8 @@ async function handleApi(request, env) {
         const h = await hashPassword(body.password);
         await env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(h, row.id).run();
       }
-      const token = btoa(JSON.stringify({
-        id: row.id, username: row.username, role: row.role, full_name: row.full_name,
+      const token = utf8ToB64(JSON.stringify({
+        id: row.id, username: row.username, role: row.role, full_name: row.full_name || '',
       }));
       return json({
         ok: true,
