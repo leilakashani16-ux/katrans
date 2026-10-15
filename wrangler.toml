@@ -17,5 +17,5 @@ run_worker_first = ["/api/*"]
 #
 # [[d1_databases]]
 # binding = "DB"
- database_name = "kitchen-inventory"
- database_id = "327510ab-2de3-4292-b01e-a1332cf970e1"
+# database_name = "kitchen-inventory"
+ # database_id = "327510ab-2de3-4292-b01e-a1332cf970e1"
