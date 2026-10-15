@@ -1,6 +1,4 @@
-# فرمت استاندارد Cloudflare Workers + Static Assets
-# خطای قبلی دقیقاً می‌گفت این بخش [assets] لازم است
-
+# Workers + Static Assets + D1
 name = "kitchen-app"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
@@ -9,10 +7,14 @@ compatibility_date = "2024-11-01"
 directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+# همه درخواست‌های /api/* اول به Worker می‌روند
+run_worker_first = ["/api/*"]
 
-# D1 را بعد از ساخت دیتابیس در Dashboard وصل کنید:
-# Settings → Bindings → D1 → Variable name: DB
-# اگر می‌خواهید از CLI هم bind باشد، database_id واقعی را از داشبورد اینجا بگذارید:
+# ===== مهم: D1 را وصل کنید =====
+# 1) در Dashboard یک D1 بسازید (مثلاً kitchen-inventory)
+# 2) Settings → Bindings → D1 → Variable name دقیقاً: DB
+# 3) یا database_id را اینجا بگذارید و از CLI دیپلوی کنید:
+#
 # [[d1_databases]]
 # binding = "DB"
 # database_name = "kitchen-inventory"

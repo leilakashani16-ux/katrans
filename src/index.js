@@ -430,18 +430,34 @@ async function handleApi(request, env) {
 
       const body = await request.json();
       delete body.id;
+      delete body.password_hash; // never accept raw hash from client on create except via password
 
       if (store === 'users' && body.password) {
         body.password_hash = await hashPassword(body.password);
         delete body.password;
+      } else if (store === 'users') {
+        delete body.password;
       }
 
-      // map client field password → password_hash already handled
+      // normalize booleans / active for D1 INTEGER columns
+      if ('active' in body) body.active = body.active === false || body.active === 0 || body.active === '0' ? 0 : 1;
+      // strip empty strings for optional numeric fields that break SQLite
+      for (const k of Object.keys(body)) {
+        if (body[k] === '') body[k] = null;
+      }
+
       const keys = Object.keys(body).filter((k) => body[k] !== undefined);
       if (!keys.length) return json({ error: 'empty body' }, 400);
       const placeholders = keys.map(() => '?').join(',');
       const sql = `INSERT INTO ${store} (${keys.join(',')}) VALUES (${placeholders})`;
-      const result = await env.DB.prepare(sql).bind(...keys.map((k) => body[k])).run();
+      let result;
+      try {
+        result = await env.DB.prepare(sql).bind(...keys.map((k) => body[k])).run();
+      } catch (err) {
+        const msg = String(err.message || err);
+        if (msg.includes('UNIQUE')) return json({ error: 'کد یا نام تکراری است — مقدار دیگری انتخاب کنید' }, 409);
+        throw err;
+      }
       const newId = result.meta.last_row_id;
 
       if (store === 'productions' && body.remainder_type === 'برگشت به مواد' && Number(body.remainder_weight || 0) > 0) {
@@ -469,11 +485,24 @@ async function handleApi(request, env) {
       if (body.password) {
         body.password_hash = await hashPassword(body.password);
         delete body.password;
+      } else {
+        delete body.password;
+        delete body.password_hash;
+      }
+      if ('active' in body) body.active = body.active === false || body.active === 0 || body.active === '0' ? 0 : 1;
+      for (const k of Object.keys(body)) {
+        if (body[k] === '') body[k] = null;
       }
       const keys = Object.keys(body).filter((k) => body[k] !== undefined);
       if (!keys.length) return json({ error: 'empty' }, 400);
       const sets = keys.map((k) => `${k} = ?`).join(', ');
-      await env.DB.prepare(`UPDATE ${store} SET ${sets} WHERE id = ?`).bind(...keys.map((k) => body[k]), id).run();
+      try {
+        await env.DB.prepare(`UPDATE ${store} SET ${sets} WHERE id = ?`).bind(...keys.map((k) => body[k]), id).run();
+      } catch (err) {
+        const msg = String(err.message || err);
+        if (msg.includes('UNIQUE')) return json({ error: 'کد یا نام تکراری است' }, 409);
+        throw err;
+      }
 
       if (store === 'productions') {
         await env.DB.prepare('DELETE FROM returns WHERE production_id = ?').bind(id).run();

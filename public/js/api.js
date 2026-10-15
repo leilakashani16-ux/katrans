@@ -15,10 +15,21 @@ const Api = {
 
   async request(path, options = {}) {
     const url = (this.base || '') + '/api/' + path.replace(/^\//, '');
-    const res = await fetch(url, {
-      ...options,
-      headers: { ...this.headers, ...(options.headers || {}) },
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    let res;
+    try {
+      res = await fetch(url, {
+        ...options,
+        signal: ctrl.signal,
+        headers: { ...this.headers, ...(options.headers || {}) },
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if (e.name === 'AbortError') throw new Error('زمان پاسخ سرور تمام شد — دوباره تلاش کنید');
+      throw new Error('خطای شبکه: ' + (e.message || 'اتصال برقرار نشد'));
+    }
+    clearTimeout(timer);
     let data = null;
     try {
       data = await res.json();

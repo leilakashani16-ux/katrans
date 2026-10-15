@@ -219,13 +219,21 @@ Pages.showEntryForm = async function (id) {
 
   document.getElementById('entry-form').onsubmit = async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target).entries());
-    data.quantity = Number(data.quantity);
-    data.created_at = item.created_at || new Date().toISOString();
-    if (id) { data.id = id; await DB.put('entries', data); toast('ویرایش شد', 'success'); }
-    else { await DB.add('entries', data); toast('ورود ثبت شد', 'success'); }
-    closeModal();
-    navigate('entries');
+    const btn = ev.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'در حال ذخیره...'; }
+    try {
+      const data = Object.fromEntries(new FormData(ev.target).entries());
+      data.quantity = Number(data.quantity);
+      data.created_at = item.created_at || new Date().toISOString();
+      if (id) { data.id = id; await DB.put('entries', data); toast('ویرایش شد', 'success'); }
+      else { await DB.add('entries', data); toast('ورود ثبت شد', 'success'); }
+      closeModal();
+      navigate('entries');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در ذخیره', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
+    }
   };
 };
 
@@ -515,23 +523,31 @@ Pages.showProdForm = async function (id) {
 
   document.getElementById('prod-form').onsubmit = async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target).entries());
-    data.quantity = Number(data.quantity);
-    data.material_weight = Number(data.material_weight);
-    data.duration_minutes = data.duration_minutes ? Number(data.duration_minutes) : null;
-    data.remainder_count = Number(data.remainder_count || 0);
-    data.remainder_weight = Number(data.remainder_weight || 0);
-    data.created_at = item.created_at || new Date().toISOString();
-    if (id) {
-      data.id = id;
-      await DB.updateProductionWithReturn(data);
-      toast('ویرایش شد (برگشت خودکار به‌روز شد)', 'success');
-    } else {
-      await DB.addProductionWithReturn(data);
-      toast('تولید ثبت شد' + (data.remainder_type === 'برگشت به مواد' && data.remainder_weight > 0 ? ' + برگشت به مواد' : ''), 'success');
+    const btn = ev.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'در حال ذخیره...'; }
+    try {
+      const data = Object.fromEntries(new FormData(ev.target).entries());
+      data.quantity = Number(data.quantity);
+      data.material_weight = Number(data.material_weight);
+      data.duration_minutes = data.duration_minutes ? Number(data.duration_minutes) : null;
+      data.remainder_count = Number(data.remainder_count || 0);
+      data.remainder_weight = Number(data.remainder_weight || 0);
+      data.created_at = item.created_at || new Date().toISOString();
+      if (id) {
+        data.id = id;
+        await DB.updateProductionWithReturn(data);
+        toast('ویرایش شد (برگشت خودکار به‌روز شد)', 'success');
+      } else {
+        await DB.addProductionWithReturn(data);
+        toast('تولید ثبت شد' + (data.remainder_type === 'برگشت به مواد' && data.remainder_weight > 0 ? ' + برگشت به مواد' : ''), 'success');
+      }
+      closeModal();
+      navigate('productions');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در ذخیره تولید', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
     }
-    closeModal();
-    navigate('productions');
   };
 };
 
@@ -647,15 +663,23 @@ Pages.showMaterialForm = async function (id) {
 
   document.getElementById('mat-form').onsubmit = async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target).entries());
-    data.initial_stock = Number(data.initial_stock);
-    data.min_alert = Number(data.min_alert);
-    data.active = true;
-    if (id) { data.id = id; await DB.put('materials', data); }
-    else await DB.add('materials', data);
-    toast('ذخیره شد', 'success');
-    closeModal();
-    navigate('materials');
+    const btn = ev.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'در حال ذخیره...'; }
+    try {
+      const data = Object.fromEntries(new FormData(ev.target).entries());
+      data.initial_stock = Number(data.initial_stock);
+      data.min_alert = Number(data.min_alert);
+      data.active = 1;
+      if (id) { data.id = id; await DB.put('materials', data); }
+      else await DB.add('materials', data);
+      toast('ذخیره شد', 'success');
+      closeModal();
+      navigate('materials');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در ذخیره ماده', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
+    }
   };
 };
 
@@ -736,14 +760,22 @@ Pages.showProductForm = async function (id) {
 
   document.getElementById('proddef-form').onsubmit = async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target).entries());
-    data.weight_per_unit = Number(data.weight_per_unit);
-    data.active = true;
-    if (id) { data.id = id; await DB.put('products', data); }
-    else await DB.add('products', data);
-    toast('ذخیره شد', 'success');
-    closeModal();
-    navigate('products');
+    const btn = ev.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'در حال ذخیره...'; }
+    try {
+      const data = Object.fromEntries(new FormData(ev.target).entries());
+      data.weight_per_unit = Number(data.weight_per_unit);
+      data.active = 1;
+      if (id) { data.id = id; await DB.put('products', data); }
+      else await DB.add('products', data);
+      toast('ذخیره شد', 'success');
+      closeModal();
+      navigate('products');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در ذخیره محصول', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
+    }
   };
 };
 
@@ -806,13 +838,21 @@ Pages.showPersonForm = async function (id) {
 
   document.getElementById('person-form').onsubmit = async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target).entries());
-    data.active = true;
-    if (id) { data.id = id; await DB.put('personnel', data); }
-    else await DB.add('personnel', data);
-    toast('ذخیره شد', 'success');
-    closeModal();
-    navigate('personnel');
+    const btn = ev.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'در حال ذخیره...'; }
+    try {
+      const data = Object.fromEntries(new FormData(ev.target).entries());
+      data.active = 1;
+      if (id) { data.id = id; await DB.put('personnel', data); }
+      else await DB.add('personnel', data);
+      toast('ذخیره شد', 'success');
+      closeModal();
+      navigate('personnel');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در ذخیره پرسنل', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
+    }
   };
 };
 
