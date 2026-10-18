@@ -23,7 +23,18 @@ Pages.dashboard = async function () {
   });
 
 
-  // --- داده‌های نمودار (بدون کتابخانه خارجی؛ اگر خراب شود داشبورد می‌ماند) ---
+  // --- داده‌های نمودار (واحد از تعریف ماده؛ کیلو/عدد) ---
+  const unitOf = (name) => {
+    const m = stock.find(x => x.name === name);
+    return (m && m.unit) ? m.unit : 'کیلوگرم';
+  };
+  const unitShort = (u) => {
+    if (!u) return '';
+    if (u.includes('عدد') || u === 'عدد') return 'عدد';
+    if (u.includes('کیلو')) return 'کیلو';
+    return u;
+  };
+
   const matConsume = {};
   productions.forEach(p => {
     const n = p.material_name || 'نامشخص';
@@ -32,14 +43,18 @@ Pages.dashboard = async function () {
   const topMats = Object.entries(matConsume).sort((a,b) => b[1]-a[1]).slice(0, 8);
   const maxMat = topMats.length ? topMats[0][1] : 1;
 
+  // روز: فقط وزن‌های کیلوگرمی برای جمع معنادار؛ موارد عددی جدا
   const dayWeight = {};
   productions.forEach(p => {
     const d = p.date || '—';
+    const u = unitOf(p.material_name);
+    if (unitShort(u) === 'عدد') return; // در نمودار روز فقط کیلو
     dayWeight[d] = (dayWeight[d] || 0) + Number(p.material_weight || 0);
   });
   const dayKeys = Object.keys(dayWeight).sort().slice(-10);
   const maxDay = dayKeys.reduce((m, d) => Math.max(m, dayWeight[d]), 1) || 1;
 
+  // پرسنل: وزن کیلو + تعداد اقلام عددی جدا در برچسب
   const staffList = Object.entries(pStats).sort((a,b) => b[1].weight - a[1].weight).slice(0, 8);
   const maxStaff = staffList.length ? staffList[0][1].weight : 1;
 
@@ -81,8 +96,9 @@ Pages.dashboard = async function () {
         <div class="text-2xl font-bold text-brand-400">${fmtNum(productions.length)}</div>
       </div>
       <div class="stat-card">
-        <div class="text-slate-400 text-xs">وزن مواد مصرفی (کیلو)</div>
+        <div class="text-slate-400 text-xs">جمع فیلد مصرف تولید *</div>
         <div class="text-2xl font-bold text-cyan-400">${fmtNum(totalWeight)}</div>
+        <div class="text-[10px] text-slate-500 mt-1">* کیلو و عدد با هم جمع نمی‌شوند؛ به نمودار مواد نگاه کنید</div>
       </div>
       <div class="stat-card">
         <div class="text-slate-400 text-xs">تعداد محصولات</div>
@@ -98,12 +114,12 @@ Pages.dashboard = async function () {
     <div class="grid lg:grid-cols-2 gap-6 mb-8">
       <div class="glass-card rounded-2xl p-5">
         <h2 class="font-semibold mb-1">📊 مصرف مواد (از روی تولید)</h2>
-        <p class="text-xs text-slate-400 mb-4">بیشترین وزن مصرفی مواد اولیه</p>
+        <p class="text-xs text-slate-400 mb-4">بر اساس واحد هر ماده (کیلو یا عدد)</p>
         ${topMats.length ? topMats.map(([name, w]) => `
           <div class="mb-3">
             <div class="flex justify-between text-sm mb-1">
               <span class="font-medium truncate max-w-[70%]">${name}</span>
-              <span class="text-brand-300">${fmtNum(w)} کیلو</span>
+              <span class="text-brand-300">${fmtNum(w)} ${unitShort(unitOf(name))}</span>
             </div>
             ${bar((w / maxMat) * 100, 'bg-gradient-to-l from-brand-500 to-brand-700')}
           </div>
@@ -111,7 +127,7 @@ Pages.dashboard = async function () {
       </div>
       <div class="glass-card rounded-2xl p-5">
         <h2 class="font-semibold mb-1">📅 وزن تولید بر اساس روز</h2>
-        <p class="text-xs text-slate-400 mb-4">۱۰ روز اخیر دارای ثبت</p>
+        <p class="text-xs text-slate-400 mb-4">۱۰ روز اخیر — فقط مواد کیلوگرمی (عدد جدا محاسبه می‌شود)</p>
         ${dayKeys.length ? dayKeys.map(d => `
           <div class="mb-3">
             <div class="flex justify-between text-sm mb-1">
@@ -130,7 +146,7 @@ Pages.dashboard = async function () {
             <div class="mb-3">
               <div class="flex justify-between text-sm mb-1">
                 <span class="font-medium truncate max-w-[60%]">${name}</span>
-                <span class="text-violet-300">${fmtNum(s.weight)} کیلو · ${s.count} رکورد</span>
+                <span class="text-violet-300">${fmtNum(s.weight)} (مجموع فیلد مصرف) · ${s.count} رکورد</span>
               </div>
               ${bar((s.weight / maxStaff) * 100, 'bg-gradient-to-l from-violet-400 to-violet-700')}
             </div>
