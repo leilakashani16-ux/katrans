@@ -806,7 +806,10 @@ Pages.personnel = async function () {
                 <td class="font-medium">${p.name}</td>
                 <td>${p.position || '—'}</td>
                 <td>${p.active !== false ? '<span class="badge badge-ok">بله</span>' : '<span class="badge badge-danger">خیر</span>'}</td>
-                ${canEdit ? `<td><button class="btn-ghost text-xs" onclick="Pages.showPersonForm(${p.id})">ویرایش</button></td>` : ''}
+                ${canEdit ? `<td class="space-x-1 space-x-reverse whitespace-nowrap">
+                  <button class="btn-ghost text-xs" onclick="Pages.showPersonForm(${p.id})">ویرایش</button>
+                  <button class="btn-ghost text-xs text-red-400" onclick="Pages.deletePerson(${p.id}, '${String(p.name||'').replace(/'/g, "\\'")}')">حذف</button>
+                </td>` : ''}
               </tr>
             `).join('')}
           </tbody>
@@ -854,6 +857,20 @@ Pages.showPersonForm = async function (id) {
       if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
     }
   };
+};
+
+
+Pages.deletePerson = async function (id, name) {
+  if (!Auth.isAdmin()) return toast('فقط مدیر', 'error');
+  if (!confirmAction('پرسنل «' + (name || id) + '» حذف شود؟')) return;
+  try {
+    await DB.remove('personnel', id);
+    toast('پرسنل حذف شد', 'success');
+    navigate('personnel');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا در حذف پرسنل', 'error');
+  }
 };
 
 /* ========== REPORTS ========== */
