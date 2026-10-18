@@ -22,7 +22,34 @@ Pages.dashboard = async function () {
     pStats[n].duration += Number(p.duration_minutes || 0);
   });
 
+
+  // --- داده‌های نمودار (بدون کتابخانه خارجی؛ اگر خراب شود داشبورد می‌ماند) ---
+  const matConsume = {};
+  productions.forEach(p => {
+    const n = p.material_name || 'نامشخص';
+    matConsume[n] = (matConsume[n] || 0) + Number(p.material_weight || 0);
+  });
+  const topMats = Object.entries(matConsume).sort((a,b) => b[1]-a[1]).slice(0, 8);
+  const maxMat = topMats.length ? topMats[0][1] : 1;
+
+  const dayWeight = {};
+  productions.forEach(p => {
+    const d = p.date || '—';
+    dayWeight[d] = (dayWeight[d] || 0) + Number(p.material_weight || 0);
+  });
+  const dayKeys = Object.keys(dayWeight).sort().slice(-10);
+  const maxDay = dayKeys.reduce((m, d) => Math.max(m, dayWeight[d]), 1) || 1;
+
+  const staffList = Object.entries(pStats).sort((a,b) => b[1].weight - a[1].weight).slice(0, 8);
+  const maxStaff = staffList.length ? staffList[0][1].weight : 1;
+
+  const bar = (pct, color) => {
+    const w = Math.max(2, Math.min(100, Math.round(pct)));
+    return `<div class="h-2.5 rounded-full bg-slate-800 overflow-hidden"><div class="h-full rounded-full ${color}" style="width:${w}%"></div></div>`;
+  };
+
   const alerts = stock.filter(m => m.status !== 'عادی');
+
   const alertHtml = alerts.length ? `
     <div class="alert-banner mb-6 fade-in">
       <div class="font-semibold text-amber-300 mb-2">⚠️ هشدار موجودی</div>
@@ -64,6 +91,51 @@ Pages.dashboard = async function () {
       <div class="stat-card">
         <div class="text-slate-400 text-xs">تعداد ورود مواد</div>
         <div class="text-2xl font-bold text-amber-400">${fmtNum(entries.length)}</div>
+      </div>
+    </div>
+
+
+    <div class="grid lg:grid-cols-2 gap-6 mb-8">
+      <div class="glass-card rounded-2xl p-5">
+        <h2 class="font-semibold mb-1">📊 مصرف مواد (از روی تولید)</h2>
+        <p class="text-xs text-slate-400 mb-4">بیشترین وزن مصرفی مواد اولیه</p>
+        ${topMats.length ? topMats.map(([name, w]) => `
+          <div class="mb-3">
+            <div class="flex justify-between text-sm mb-1">
+              <span class="font-medium truncate max-w-[70%]">${name}</span>
+              <span class="text-brand-300">${fmtNum(w)} کیلو</span>
+            </div>
+            ${bar((w / maxMat) * 100, 'bg-gradient-to-l from-brand-500 to-brand-700')}
+          </div>
+        `).join('') : '<p class="text-slate-500 text-sm">هنوز تولیدی ثبت نشده</p>'}
+      </div>
+      <div class="glass-card rounded-2xl p-5">
+        <h2 class="font-semibold mb-1">📅 وزن تولید بر اساس روز</h2>
+        <p class="text-xs text-slate-400 mb-4">۱۰ روز اخیر دارای ثبت</p>
+        ${dayKeys.length ? dayKeys.map(d => `
+          <div class="mb-3">
+            <div class="flex justify-between text-sm mb-1">
+              <span class="text-slate-300">${d}</span>
+              <span class="text-cyan-300">${fmtNum(dayWeight[d])} کیلو</span>
+            </div>
+            ${bar((dayWeight[d] / maxDay) * 100, 'bg-gradient-to-l from-cyan-400 to-cyan-700')}
+          </div>
+        `).join('') : '<p class="text-slate-500 text-sm">داده‌ای نیست</p>'}
+      </div>
+      <div class="glass-card rounded-2xl p-5 lg:col-span-2">
+        <h2 class="font-semibold mb-1">👨‍🍳 سهم پرسنل از وزن تولید</h2>
+        <p class="text-xs text-slate-400 mb-4">مرتب‌شده بر اساس وزن مواد مصرفی</p>
+        <div class="grid md:grid-cols-2 gap-x-8">
+          ${staffList.length ? staffList.map(([name, s]) => `
+            <div class="mb-3">
+              <div class="flex justify-between text-sm mb-1">
+                <span class="font-medium truncate max-w-[60%]">${name}</span>
+                <span class="text-violet-300">${fmtNum(s.weight)} کیلو · ${s.count} رکورد</span>
+              </div>
+              ${bar((s.weight / maxStaff) * 100, 'bg-gradient-to-l from-violet-400 to-violet-700')}
+            </div>
+          `).join('') : '<p class="text-slate-500 text-sm">داده‌ای نیست</p>'}
+        </div>
       </div>
     </div>
 
