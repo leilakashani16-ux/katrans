@@ -12,6 +12,8 @@ Pages.dashboard = async function () {
   try { products = await DB.getAll('products'); } catch (e) { products = []; }
   let plans = [];
   try { plans = (await DB.getAll('daily_plans')) || []; } catch (e) { plans = []; }
+  let scores = [];
+  try { scores = (await DB.getAll('staff_scores')) || []; } catch (e) { scores = []; }
 
   const totalWeight = productions.reduce((s, p) => s + Number(p.material_weight || 0), 0);
   const totalQty = productions.reduce((s, p) => s + Number(p.quantity || 0), 0);
@@ -184,6 +186,15 @@ Pages.dashboard = async function () {
     board[n].count += 1;
   });
   const leaderboard = Object.entries(board).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5);
+  const todayScores = scores.filter(s => s.day === today);
+  const scoreOf = (name) => {
+    const rows = todayScores.filter(s => s.personnel_name === name);
+    if (!rows.length) return null;
+    return rows[rows.length - 1]; // آخرین نمره
+  };
+  // میانگین نمرات امروز برای نمایش
+  const scoreBoard = todayScores.slice().sort((a, b) => Number(b.score) - Number(a.score));
+
 
   // برنامه امروز vs واقعی
   const todayPlans = plans.filter(pl => pl.day === today);
@@ -232,22 +243,40 @@ Pages.dashboard = async function () {
 
     <div class="grid lg:grid-cols-2 gap-6 mb-8">
       <div class="glass-card rounded-2xl p-5">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="font-semibold">🏆 افتخار شیفت امروز</h2>
-          <button class="btn-ghost text-xs" onclick="Pages.shiftSummary()">خلاصه پایان شیفت</button>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 class="font-semibold">🏆 افتخار و نمره شیفت امروز</h2>
+          <div class="flex gap-2">
+            ${Auth.isAdmin() ? `<button class="btn-secondary text-xs" onclick="Pages.scoreStaffForm()">نمره‌دهی</button>` : ''}
+            <button class="btn-ghost text-xs" onclick="Pages.shiftSummary()">خلاصه واتساپ</button>
+          </div>
         </div>
         ${leaderboard.length ? `
-          <div class="space-y-2">
-            ${leaderboard.map(([name, s], i) => `
+          <div class="space-y-2 mb-4">
+            ${leaderboard.map(([name, s], i) => {
+              const sc = scoreOf(name);
+              return `
               <div class="flex items-center gap-3 text-sm">
                 <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${i===0?'bg-amber-500 text-slate-900':i===1?'bg-slate-400 text-slate-900':i===2?'bg-amber-800 text-white':'bg-slate-700'}">${i+1}</span>
                 <span class="flex-1 font-medium truncate">${name}</span>
                 <span class="text-slate-400 text-xs">${s.count} رکورد</span>
                 <span class="text-brand-300 font-medium">${fmtNum(s.qty)}</span>
+                <span class="text-xs ${sc ? (sc.score>=8?'text-brand-300':sc.score>=5?'text-amber-300':'text-red-300') : 'text-slate-600'}">${sc ? ('⭐' + sc.score) : '—'}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        ` : `<p class="text-slate-500 text-sm mb-3">امروز هنوز تولیدی ثبت نشده · ${today}</p>`}
+        ${scoreBoard.length ? `
+          <div class="border-t border-slate-700/50 pt-3 mt-2">
+            <div class="text-xs text-slate-400 mb-2">نمرات ثبت‌شده امروز</div>
+            ${scoreBoard.map(s => `
+              <div class="flex justify-between text-xs mb-1 gap-2">
+                <span class="truncate">${s.personnel_name}</span>
+                <span class="font-bold ${s.score>=8?'text-brand-300':s.score>=5?'text-amber-300':'text-red-300'}">${s.score}/10</span>
               </div>
+              ${s.note ? `<div class="text-[10px] text-slate-500 mb-1 pr-1">«${s.note}»</div>` : ''}
             `).join('')}
           </div>
-        ` : `<p class="text-slate-500 text-sm">امروز هنوز تولیدی ثبت نشده · ${today}</p>`}
+        ` : (Auth.isAdmin() ? `<p class="text-xs text-slate-500">هنوز نمره‌ای ثبت نشده — دکمه نمره‌دهی</p>` : '')}
       </div>
       <div class="glass-card rounded-2xl p-5">
         <h2 class="font-semibold mb-3">⚗️ ضریب تبدیل ماده → محصول</h2>
@@ -1591,6 +1620,12 @@ Pages.shiftSummary = async function () {
       board[n] = (board[n] || 0) + Number(pr.quantity || 0);
     });
     const top = Object.entries(board).sort((a, b) => b[1] - a[1])[0];
+    let scoreRows = [];
+    try { scoreRows = ((await DB.getAll('staff_scores')) || []).filter(s => s.day === today); } catch (e) {}
+    scoreRows.sort((a, b) => Number(b.score) - Number(a.score));
+    const scoreLines = scoreRows.length
+      ? scoreRows.map(s => '⭐ ' + s.personnel_name + ': ' + s.score + '/10' + (s.note ? (' — ' + s.note) : ''))
+      : ['هنوز نمره‌ای ثبت نشده'];
     const lines = [
       '📋 خلاصه شیفت — غذای انصار',
       'تاریخ: ' + today,
@@ -1600,10 +1635,13 @@ Pages.shiftSummary = async function () {
       'ضایعات: ' + wT.length + ' رکورد · مقدار ' + sumWaste,
       top ? ('بیشترین تولید امروز: ' + top[0] + ' (' + top[1] + ')') : 'تولید ثبت نشده',
       '——————————',
+      '🏅 نمره کاری پرسنل امروز:',
+    ].concat(scoreLines).concat([
+      '——————————',
       'مواد نیازمند توجه:',
-    ].concat(
+    ]).concat(
       alerts.length ? alerts.map(m => '• ' + m.name + ': ' + m.current_stock + ' ' + (m.unit || '') + ' (' + m.status + ')') : ['• مورد بحرانی نیست'],
-      ['——————————', 'تهیه‌شده در ' + new Date().toLocaleString('fa-IR')]
+      ['——————————', 'خسته نباشید 🌿', 'تهیه‌شده در ' + new Date().toLocaleString('fa-IR')]
     );
     const text = lines.join('\n');
     const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -1667,6 +1705,53 @@ Pages.planForm = async function () {
         data.target_qty = Number(data.target_qty);
         await DB.add('daily_plans', data);
         toast('هدف ذخیره شد', 'success');
+        closeModal();
+        navigate('dashboard');
+      } catch (err) {
+        toast(err.message || 'خطا', 'error');
+      }
+    };
+  } catch (e) {
+    toast(e.message || 'خطا', 'error');
+  }
+};
+
+
+
+Pages.scoreStaffForm = async function () {
+  if (!Auth.isAdmin()) return toast('فقط مدیر می‌تواند نمره بدهد', 'error');
+  try {
+    const today = todayJalali();
+    const personnel = (await DB.getAll('personnel')).filter(p => p.active !== false);
+    const prods = await DB.getAll('productions');
+    const names = personnel.map(p => p.name).filter(Boolean);
+    prods.filter(p => p.date === today).forEach(p => {
+      if (p.producer_name && !names.includes(p.producer_name)) names.push(p.producer_name);
+    });
+    names.sort((a, b) => a.localeCompare(b, 'fa'));
+    const opts = names.map(n => '<option value="' + String(n).replace(/"/g, '&quot;') + '">' + n + '</option>').join('');
+    showModal(
+      '<div class="modal max-w-md"><h3 class="text-lg font-bold mb-2">نمره کاری روزانه</h3>' +
+      '<p class="text-xs text-slate-400 mb-3">از ۱ تا ۱۰ — در خلاصه واتساپ برای پرسنل می‌آید</p>' +
+      '<form id="score-form" class="space-y-3">' +
+      '<div><label class="text-xs text-slate-400">تاریخ</label><input name="day" class="input-field" value="' + today + '" required /></div>' +
+      '<div><label class="text-xs text-slate-400">پرسنل</label><select name="personnel_name" class="input-field" required><option value="">انتخاب</option>' + opts + '</select></div>' +
+      '<div><label class="text-xs text-slate-400">نمره (۱ تا ۱۰)</label>' +
+      '<input name="score" type="number" min="1" max="10" step="1" class="input-field" required placeholder="مثلاً ۸" /></div>' +
+      '<div><label class="text-xs text-slate-400">توضیح کوتاه (اختیاری)</label>' +
+      '<input name="note" class="input-field" placeholder="دقت بالا / سرعت خوب / ..." maxlength="120" /></div>' +
+      '<div class="flex gap-2"><button type="submit" class="btn-primary flex-1">ثبت نمره</button>' +
+      '<button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button></div></form></div>'
+    );
+    document.getElementById('score-form').onsubmit = async function (ev) {
+      ev.preventDefault();
+      try {
+        const data = Object.fromEntries(new FormData(ev.target).entries());
+        data.score = Number(data.score);
+        if (data.score < 1 || data.score > 10) throw new Error('نمره باید بین ۱ و ۱۰ باشد');
+        data.scored_by = (Auth.currentUser && (Auth.currentUser.full_name || Auth.currentUser.username)) || 'مدیر';
+        await DB.add('staff_scores', data);
+        toast('نمره ثبت شد', 'success');
         closeModal();
         navigate('dashboard');
       } catch (err) {
