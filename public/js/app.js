@@ -201,7 +201,7 @@ async function softRefreshIfNeeded() {
 function startCloudSync() {
   if (window.__syncStarted) return;
   window.__syncStarted = true;
-  setInterval(() => softRefreshIfNeeded(), 5000);
+  setInterval(() => softRefreshIfNeeded(), 10000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') softRefreshIfNeeded();
   });
