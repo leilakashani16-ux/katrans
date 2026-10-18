@@ -350,6 +350,39 @@ async function handleApi(request, env) {
       return json({ ok: true, mode: 'cloud', users: c?.c ?? 0, ts: new Date().toISOString() });
     }
 
+    // بازیابی رمز ادمین — یک‌بار بعد از deploy استفاده شود
+    // POST /api/reset-admin  body: {"secret":"ansar-reset-1405","password":"admin123"}
+    if (path === 'reset-admin' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      if (body.secret !== 'ansar-reset-1405') {
+        return json({ error: 'forbidden' }, 403);
+      }
+      const newPass = String(body.password || 'admin123');
+      const h = await hashPassword(newPass);
+      const row = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind('admin').first();
+      if (row) {
+        await env.DB.prepare('UPDATE users SET password_hash = ?, active = 1 WHERE username = ?').bind(h, 'admin').run();
+      } else {
+        await env.DB.prepare(
+          'INSERT INTO users (username, password_hash, role, full_name, active) VALUES (?, ?, ?, ?, 1)'
+        ).bind('admin', h, 'admin', 'مدیر سیستم').run();
+      }
+      // اطمینان از کاربران پیش‌فرض entry/production
+      for (const u of [
+        ['entry', 'entry123', 'entry', 'ثبت‌کننده ورود'],
+        ['production', 'prod123', 'production', 'ثبت‌کننده تولید'],
+      ]) {
+        const exists = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(u[0]).first();
+        if (!exists) {
+          const ph = await hashPassword(u[1]);
+          await env.DB.prepare(
+            'INSERT INTO users (username, password_hash, role, full_name, active) VALUES (?, ?, ?, ?, 1)'
+          ).bind(u[0], ph, u[2], u[3]).run();
+        }
+      }
+      return json({ ok: true, msg: 'رمز admin بازنشانی شد', password: newPass });
+    }
+
     if (path === 'login' && request.method === 'POST') {
       const body = await request.json();
       const row = await env.DB.prepare(
