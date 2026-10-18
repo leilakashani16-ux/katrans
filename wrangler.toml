@@ -10,12 +10,7 @@ not_found_handling = "single-page-application"
 # همه درخواست‌های /api/* اول به Worker می‌روند
 run_worker_first = ["/api/*"]
 
-# ===== مهم: D1 را وصل کنید =====
-# 1) در Dashboard یک D1 بسازید (مثلاً kitchen-inventory)
-# 2) Settings → Bindings → D1 → Variable name دقیقاً: DB
-# 3) یا database_id را اینجا بگذارید و از CLI دیپلوی کنید:
-#
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "kitchen-inventory"
- # database_id = "327510ab-2de3-4292-b01e-a1332cf970e1"
+[[d1_databases]]
+binding = "DB"
+database_name = "kitchen-inventory"
+database_id = "327510ab-2de3-4292-b01e-a1332cf970e1"
