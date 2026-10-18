@@ -144,7 +144,7 @@ Pages.entries = async function () {
       <div class="table-wrap">
         <table class="data">
           <thead><tr>
-            <th>تاریخ</th><th>ماده اولیه</th><th>مقدار</th><th>تأمین‌کننده</th><th>شماره فاکتور</th><th>توضیحات</th>
+            <th>تاریخ</th><th>ماده اولیه</th><th>مقدار</th><th>تأمین‌کننده</th><th>شماره فاکتور</th><th>ثبت‌کننده</th><th>توضیحات</th>
             ${canEdit ? '<th>عملیات</th>' : ''}
           </tr></thead>
           <tbody>
@@ -155,6 +155,7 @@ Pages.entries = async function () {
                 <td class="text-brand-300">${fmtNum(e.quantity)}</td>
                 <td>${e.supplier || '—'}</td>
                 <td class="text-slate-400">${e.invoice_no || '—'}</td>
+                <td class="text-brand-300 text-xs">${e.created_by || '—'}</td>
                 <td class="text-slate-400 text-xs max-w-[200px] truncate">${e.notes || ''}</td>
                 ${canEdit ? `<td class="space-x-1 space-x-reverse">
                   <button class="btn-ghost text-xs" onclick="Pages.showEntryForm(${e.id})">ویرایش</button>
@@ -248,7 +249,7 @@ Pages.deleteEntry = async function (id) {
 Pages.exportEntries = async function () {
   const entries = await DB.getAll('entries');
   exportToExcel(entries.map(e => ({
-    'تاریخ': e.date, 'ماده اولیه': e.material_name, 'مقدار': e.quantity,
+    'تاریخ': e.date, 'ماده اولیه': e.material_name, 'مقدار': e.quantity, 'ثبت‌کننده': e.created_by || '',
     'تأمین‌کننده': e.supplier, 'شماره فاکتور': e.invoice_no, 'توضیحات': e.notes
   })), 'ورود', 'ورود_مواد_اولیه');
 };
@@ -293,7 +294,7 @@ Pages.wastes = async function () {
       <div class="table-wrap">
         <table class="data">
           <thead><tr>
-            <th>تاریخ</th><th>ماده اولیه</th><th>نوع ضایعات</th><th>وزن (کیلو)</th><th>یادداشت</th>
+            <th>تاریخ</th><th>ماده اولیه</th><th>نوع ضایعات</th><th>وزن (کیلو)</th><th>ثبت‌کننده</th><th>یادداشت</th>
             ${canEdit ? '<th>عملیات</th>' : ''}
           </tr></thead>
           <tbody>
@@ -303,6 +304,7 @@ Pages.wastes = async function () {
                 <td class="font-medium">${w.material_name}</td>
                 <td><span class="badge badge-warn">${w.waste_type}</span></td>
                 <td class="text-amber-300">${fmtNum(w.quantity)}</td>
+                <td class="text-brand-300 text-xs">${w.created_by || '—'}</td>
                 <td class="text-slate-400 text-xs">${w.notes || ''}</td>
                 ${canEdit ? `<td><button class="btn-ghost text-xs text-red-400" onclick="Pages.deleteWaste(${w.id})">حذف</button></td>` : ''}
               </tr>
@@ -370,7 +372,7 @@ Pages.deleteWaste = async function (id) {
 Pages.exportWastes = async function () {
   const wastes = await DB.getAll('wastes');
   exportToExcel(wastes.map(w => ({
-    'تاریخ': w.date, 'ماده اولیه': w.material_name, 'نوع ضایعات': w.waste_type,
+    'تاریخ': w.date, 'ماده اولیه': w.material_name, 'نوع ضایعات': w.waste_type, 'ثبت‌کننده': w.created_by || '',
     'وزن': w.quantity, 'یادداشت': w.notes
   })), 'ضایعات', 'گزارش_ضایعات');
 };
@@ -415,7 +417,7 @@ Pages.productions = async function () {
       <div class="table-wrap">
         <table class="data">
           <thead><tr>
-            <th>تاریخ</th><th>محصول</th><th>تعداد</th><th>وزن مصرفی</th><th>ماده اولیه</th><th>تولیدکننده</th><th>مدت</th>
+            <th>تاریخ</th><th>محصول</th><th>تعداد</th><th>وزن مصرفی</th><th>ماده اولیه</th><th>تولیدکننده</th><th>ثبت‌کننده</th><th>مدت</th>
             <th>عملیات</th>
           </tr></thead>
           <tbody>
@@ -427,6 +429,7 @@ Pages.productions = async function () {
                 <td class="text-red-300">${fmtNum(p.material_weight)}</td>
                 <td class="text-slate-400">${p.material_name}</td>
                 <td>${p.producer_name || '—'}</td>
+                <td class="text-brand-300 text-xs">${p.created_by || '—'}</td>
                 <td>${p.duration_minutes ? fmtNum(p.duration_minutes) + ' د' : '—'}</td>
                 <td class="whitespace-nowrap">
                   <button class="btn-ghost text-xs" onclick="Pages.printProd(${p.id})">فیش</button>
@@ -571,7 +574,7 @@ Pages.deleteProd = async function (id) {
 Pages.exportProds = async function () {
   const list = await DB.getAll('productions');
   exportToExcel(list.map(p => ({
-    'تاریخ': p.date, 'محصول': p.product_name, 'تعداد': p.quantity,
+    'تاریخ': p.date, 'محصول': p.product_name, 'تعداد': p.quantity, 'ثبت‌کننده': p.created_by || '',
     'وزن مصرفی': p.material_weight, 'ماده اولیه': p.material_name,
     'شیفت': p.shift_code, 'شروع': p.start_time, 'پایان': p.end_time,
     'مدت': p.duration_minutes, 'تولیدکننده': p.producer_name,
@@ -906,6 +909,12 @@ Pages.reports = async function () {
           </label>
         </div>
       </div>
+      <div class="glass-card rounded-2xl p-6 space-y-3 md:col-span-2">
+        <h2 class="font-semibold">📋 سابقه حذف‌ها (ممیزی)</h2>
+        <p class="text-xs text-slate-400">چه کسی چه رکوردی را حذف کرده است — فقط مدیر</p>
+        <button class="btn-secondary" onclick="Pages.showAuditLog()">نمایش سابقه حذف</button>
+        <div id="audit-box" class="hidden mt-3 max-h-96 overflow-y-auto"></div>
+      </div>
       <div class="glass-card rounded-2xl p-6 space-y-3 md:col-span-2 border border-brand-500/20">
         <h2 class="font-semibold text-brand-300">☁️ همگام‌سازی Cloudflare (real-time)</h2>
         <p class="text-sm text-slate-400 leading-relaxed">
@@ -1069,6 +1078,39 @@ Pages.deleteUser = async function (id, username) {
   } catch (e) {
     console.error(e);
     toast(e.message || 'خطا در حذف کاربر', 'error');
+  }
+};
+
+
+Pages.showAuditLog = async function () {
+  if (!Auth.isAdmin()) return toast('فقط مدیر', 'error');
+  const box = document.getElementById('audit-box');
+  if (!box) return;
+  box.classList.remove('hidden');
+  box.innerHTML = '<p class="text-slate-400 text-sm">در حال بارگذاری...</p>';
+  try {
+    const rows = await Api.request('audit');
+    if (!rows || !rows.length) {
+      box.innerHTML = '<p class="text-slate-500 text-sm">سابقه‌ای ثبت نشده</p>';
+      return;
+    }
+    box.innerHTML = `
+      <table class="data text-xs">
+        <thead><tr><th>زمان</th><th>عمل</th><th>بخش</th><th>حذف‌کننده</th><th>خلاصه</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td class="whitespace-nowrap">${(r.created_at || '').replace('T', ' ').slice(0, 19)}</td>
+              <td>${r.action === 'delete' ? 'حذف' : r.action}</td>
+              <td>${r.store_name || '—'}</td>
+              <td class="text-brand-300">${r.full_name || r.username || '—'}</td>
+              <td class="max-w-[240px] truncate">${r.summary || '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    box.innerHTML = '<p class="text-red-400 text-sm">' + (e.message || 'خطا') + '</p>';
   }
 };
 

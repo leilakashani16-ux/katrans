@@ -64,6 +64,20 @@ function parseAuth(req) {
   }
 }
 
+
+async function ensureColumn(db, table, column, typeSql) {
+  try {
+    await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeSql}`).run();
+  } catch (e) {
+    // column already exists
+  }
+}
+
+function actorLabel(user) {
+  if (!user) return '';
+  return String(user.full_name || user.username || '').trim();
+}
+
 async function ensureSchema(db) {
   // Create tables if missing (idempotent)
   await db.batch([
@@ -334,6 +348,24 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     }
   }
 
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    store_name TEXT NOT NULL,
+    record_id INTEGER,
+    username TEXT,
+    full_name TEXT,
+    summary TEXT,
+    detail TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+
+  for (const t of ['entries', 'wastes', 'productions', 'returns']) {
+    await ensureColumn(db, t, 'created_by', 'TEXT');
+    await ensureColumn(db, t, 'updated_by', 'TEXT');
+  }
+
 }
 
 async function handleApi(request, env) {
@@ -446,6 +478,14 @@ async function handleApi(request, env) {
       return json(stock);
     }
 
+    if (path === 'audit' && request.method === 'GET') {
+      if (!user || user.role !== 'admin') return json({ error: 'forbidden' }, 403);
+      const rows = (await env.DB.prepare(
+        'SELECT * FROM audit_logs ORDER BY id DESC LIMIT 500'
+      ).all()).results || [];
+      return json(rows);
+    }
+
     if (path === 'backup' && request.method === 'GET') {
       if (!user || user.role !== 'admin') return json({ error: 'forbidden' }, 403);
       const data = {};
@@ -515,6 +555,14 @@ async function handleApi(request, env) {
         if (body[k] === '') body[k] = null;
       }
 
+      // ثبت‌کننده: از توکن احراز هویت (کلاینت نمی‌تواند جعل کند)
+      if (['entries', 'wastes', 'productions', 'returns'].includes(store)) {
+        const who = actorLabel(user);
+        body.created_by = who;
+        body.updated_by = who;
+        if (!body.created_at) body.created_at = new Date().toISOString();
+      }
+
       const keys = Object.keys(body).filter((k) => body[k] !== undefined);
       if (!keys.length) return json({ error: 'empty body' }, 400);
       const placeholders = keys.map(() => '?').join(',');
@@ -562,6 +610,10 @@ async function handleApi(request, env) {
       for (const k of Object.keys(body)) {
         if (body[k] === '') body[k] = null;
       }
+      if (['entries', 'wastes', 'productions', 'returns'].includes(store)) {
+        body.updated_by = actorLabel(user);
+        delete body.created_by; // تغییر ثبت‌کننده اولیه مجاز نیست
+      }
       const keys = Object.keys(body).filter((k) => body[k] !== undefined);
       if (!keys.length) return json({ error: 'empty' }, 400);
       const sets = keys.map((k) => `${k} = ?`).join(', ');
@@ -595,6 +647,29 @@ async function handleApi(request, env) {
 
     if (request.method === 'DELETE' && id) {
       if (!user || user.role !== 'admin') return json({ error: 'admin only' }, 403);
+      const row = await env.DB.prepare(`SELECT * FROM ${store} WHERE id = ?`).bind(id).first();
+      let summary = store + ' #' + id;
+      if (row) {
+        summary = [row.date, row.material_name || row.product_name || row.name || row.username, row.quantity || row.material_weight]
+          .filter((x) => x != null && x !== '')
+          .join(' | ');
+      }
+      try {
+        await env.DB.prepare(
+          `INSERT INTO audit_logs (action, store_name, record_id, username, full_name, summary, detail)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+          'delete',
+          store,
+          id,
+          user.username || '',
+          user.full_name || '',
+          summary,
+          row ? JSON.stringify(row) : null
+        ).run();
+      } catch (e) {
+        console.error('audit log failed', e);
+      }
       await env.DB.prepare(`DELETE FROM ${store} WHERE id = ?`).bind(id).run();
       if (store === 'productions') {
         await env.DB.prepare('DELETE FROM returns WHERE production_id = ?').bind(id).run();
