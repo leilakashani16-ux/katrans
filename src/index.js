@@ -367,7 +367,14 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
   for (const t of ['entries', 'wastes', 'productions', 'returns']) {
     await ensureColumn(db, t, 'created_by', 'TEXT');
     await ensureColumn(db, t, 'updated_by', 'TEXT');
+    await ensureColumn(db, t, 'deleted_at', 'TEXT');
   }
+  for (const t of ['materials', 'products', 'personnel']) {
+    await ensureColumn(db, t, 'deleted_at', 'TEXT');
+  }
+  // optional secondary unit for materials (display only, does not affect stock calc)
+  await ensureColumn(db, 'materials', 'secondary_unit', 'TEXT');
+  await ensureColumn(db, 'materials', 'unit_factor', 'REAL');
 
 
 
@@ -498,11 +505,18 @@ async function handleApi(request, env) {
     const user = parseAuth(request);
 
     if (path === 'stock' && request.method === 'GET') {
-      const materials = (await env.DB.prepare('SELECT * FROM materials').all()).results || [];
-      const entries = (await env.DB.prepare('SELECT * FROM entries').all()).results || [];
-      const productions = (await env.DB.prepare('SELECT * FROM productions').all()).results || [];
-      const wastes = (await env.DB.prepare('SELECT * FROM wastes').all()).results || [];
-      const returns = (await env.DB.prepare('SELECT * FROM returns').all()).results || [];
+      const soft = (t) => {
+        try {
+          return env.DB.prepare(`SELECT * FROM ${t} WHERE deleted_at IS NULL OR deleted_at = ''`).all();
+        } catch {
+          return env.DB.prepare(`SELECT * FROM ${t}`).all();
+        }
+      };
+      const materials = (await soft('materials')).results || [];
+      const entries = (await soft('entries')).results || [];
+      const productions = (await soft('productions')).results || [];
+      const wastes = (await soft('wastes')).results || [];
+      const returns = (await soft('returns')).results || [];
       const stock = materials.map((m) => {
         const totalIn = entries.filter((e) => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0);
         const totalOut = productions.filter((p) => p.material_name === m.name).reduce((s, p) => s + Number(p.material_weight || 0), 0);
@@ -573,6 +587,56 @@ async function handleApi(request, env) {
       return json(rows);
     }
 
+    // System settings (stored in app_meta as JSON under key "settings")
+    if (path === 'settings' && request.method === 'GET') {
+      if (!user) return json({ error: 'auth required' }, 401);
+      try {
+        const row = await env.DB.prepare("SELECT value FROM app_meta WHERE key = 'settings'").first();
+        const defaults = {
+          company_name: 'غذای انصار',
+          default_min_alert: 5,
+          alert_enabled: true,
+          backup_hint: true,
+        };
+        if (!row || !row.value) return json(defaults);
+        return json({ ...defaults, ...JSON.parse(row.value) });
+      } catch (e) {
+        return json({ company_name: 'غذای انصار', default_min_alert: 5, alert_enabled: true });
+      }
+    }
+
+    if (path === 'settings' && request.method === 'PUT') {
+      if (!user || user.role !== 'admin') return json({ error: 'admin only' }, 403);
+      const body = await request.json().catch(() => ({}));
+      const safe = {
+        company_name: String(body.company_name || 'غذای انصار').slice(0, 80),
+        default_min_alert: Number(body.default_min_alert) || 5,
+        alert_enabled: body.alert_enabled !== false,
+        backup_hint: body.backup_hint !== false,
+      };
+      await env.DB.prepare(
+        "INSERT INTO app_meta (key, value) VALUES ('settings', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      ).bind(JSON.stringify(safe)).run();
+      return json({ ok: true, settings: safe });
+    }
+
+    // Restore soft-deleted record
+    if (path === 'restore' && request.method === 'POST') {
+      if (!user || user.role !== 'admin') return json({ error: 'admin only' }, 403);
+      const body = await request.json().catch(() => ({}));
+      const st = String(body.store || '');
+      const rid = Number(body.id);
+      const allowed = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel']);
+      if (!allowed.has(st) || !rid) return json({ error: 'invalid' }, 400);
+      try {
+        await env.DB.prepare(`UPDATE ${st} SET deleted_at = NULL WHERE id = ?`).bind(rid).run();
+        await bumpDataVersion(env.DB);
+        return json({ ok: true, msg: 'بازیابی شد' });
+      } catch (e) {
+        return json({ error: e.message || 'خطا' }, 500);
+      }
+    }
+
     if (path === 'backup' && request.method === 'GET') {
       if (!user || user.role !== 'admin') return json({ error: 'forbidden' }, 403);
       const data = {};
@@ -593,8 +657,21 @@ async function handleApi(request, env) {
     }
 
     if (request.method === 'GET' && !id) {
-      const rows = (await env.DB.prepare(`SELECT * FROM ${store} ORDER BY id DESC`).all()).results || [];
-      // never return password hashes to non-admin list is ok for users table - strip
+      // soft-delete: hide deleted rows by default (except audit/users)
+      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel']);
+      let rows;
+      if (softStores.has(store)) {
+        try {
+          rows = (await env.DB.prepare(
+            `SELECT * FROM ${store} WHERE deleted_at IS NULL OR deleted_at = '' ORDER BY id DESC`
+          ).all()).results || [];
+        } catch (e) {
+          // column may not exist yet on very old DB
+          rows = (await env.DB.prepare(`SELECT * FROM ${store} ORDER BY id DESC`).all()).results || [];
+        }
+      } else {
+        rows = (await env.DB.prepare(`SELECT * FROM ${store} ORDER BY id DESC`).all()).results || [];
+      }
       if (store === 'users') {
         return json(rows.map(({ password_hash, ...r }) => r));
       }
@@ -814,9 +891,29 @@ const keys = Object.keys(body).filter((k) => body[k] !== undefined);
       } catch (e) {
         console.error('audit log failed', e);
       }
-      await env.DB.prepare(`DELETE FROM ${store} WHERE id = ?`).bind(id).run();
-      if (store === 'productions') {
-        await env.DB.prepare('DELETE FROM returns WHERE production_id = ?').bind(id).run();
+      // soft delete when column exists; hard delete for users / fallback
+      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel']);
+      if (softStores.has(store)) {
+        try {
+          await env.DB.prepare(
+            `UPDATE ${store} SET deleted_at = datetime('now') WHERE id = ?`
+          ).bind(id).run();
+          if (store === 'productions') {
+            try {
+              await env.DB.prepare(
+                `UPDATE returns SET deleted_at = datetime('now') WHERE production_id = ?`
+              ).bind(id).run();
+            } catch (_) { /* column may not exist */ }
+          }
+        } catch (e) {
+          // fallback hard delete if column missing
+          await env.DB.prepare(`DELETE FROM ${store} WHERE id = ?`).bind(id).run();
+          if (store === 'productions') {
+            await env.DB.prepare('DELETE FROM returns WHERE production_id = ?').bind(id).run();
+          }
+        }
+      } else {
+        await env.DB.prepare(`DELETE FROM ${store} WHERE id = ?`).bind(id).run();
       }
       await bumpDataVersion(env.DB);
       return json({ ok: true });

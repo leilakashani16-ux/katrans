@@ -12,6 +12,8 @@ const NAV = {
     { id: 'products', label: 'محصولات', icon: '🍢' },
     { id: 'personnel', label: 'پرسنل', icon: '👨‍🍳' },
     { id: 'reports', label: 'گزارش و پشتیبان', icon: '📑' },
+    { id: 'audit', label: 'لاگ فعالیت', icon: '📜' },
+    { id: 'settings', label: 'تنظیمات', icon: '⚙️' },
     { id: 'users', label: 'کاربران', icon: '🔐' }
   ],
   entry: [

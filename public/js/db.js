@@ -36,7 +36,14 @@ function tx(storeName, mode = 'readonly') {
 async function getAll(store) {
   return new Promise((res, rej) => {
     const r = tx(store).getAll();
-    r.onsuccess = () => res(r.result);
+    r.onsuccess = () => {
+      const soft = ['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel'];
+      let rows = r.result || [];
+      if (soft.includes(store)) {
+        rows = rows.filter(x => !x.deleted_at);
+      }
+      res(rows);
+    };
     r.onerror = () => rej(r.error);
   });
 }
@@ -66,6 +73,20 @@ async function put(store, item) {
 }
 
 async function remove(store, id) {
+  // soft delete for main data stores; hard delete for users/settings
+  const soft = ['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel'];
+  if (soft.includes(store)) {
+    return new Promise(async (res, rej) => {
+      try {
+        const item = await getById(store, id);
+        if (!item) return res();
+        item.deleted_at = new Date().toISOString();
+        const r = tx(store, 'readwrite').put(item);
+        r.onsuccess = () => res();
+        r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    });
+  }
   return new Promise((res, rej) => {
     const r = tx(store, 'readwrite').delete(id);
     r.onsuccess = () => res();

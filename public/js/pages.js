@@ -5,9 +5,18 @@ const Pages = {};
 
 Pages.dashboard = async function () {
   const stock = await DB.calcStock();
-  const entries = await DB.getAll('entries');
-  const productions = await DB.getAll('productions');
-  const wastes = await DB.getAll('wastes');
+  let entries = await DB.getAll('entries');
+  let productions = await DB.getAll('productions');
+  let wastes = await DB.getAll('wastes');
+  // advanced dashboard date filter
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const df = params.get('df') || '';
+  const dt = params.get('dt') || '';
+  if (df || dt) {
+    entries = filterByDateAndSearch(entries, df, dt, '', ['date']);
+    productions = filterByDateAndSearch(productions, df, dt, '', ['date']);
+    wastes = filterByDateAndSearch(wastes, df, dt, '', ['date']);
+  }
   let products = [];
   try { products = await DB.getAll('products'); } catch (e) { products = []; }
   let plans = [];
@@ -221,9 +230,18 @@ Pages.dashboard = async function () {
     </div>` : '';
 
   return `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold">داشبورد مدیریتی</h1>
-      <p class="text-slate-400 text-sm mt-1">خلاصه موجودی و عملکرد • ${todayJalali()}</p>
+    <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold">داشبورد مدیریتی</h1>
+        <p class="text-slate-400 text-sm mt-1">خلاصه موجودی و عملکرد • ${todayJalali()}${df || dt ? ' <span class="text-brand-300">(فیلتر تاریخ فعال)</span>' : ''}</p>
+      </div>
+      <div class="filter-bar glass-card rounded-xl p-2 flex flex-wrap gap-2 items-center">
+        <input id="f-df" class="input-field" placeholder="از تاریخ" value="${df}" style="max-width:120px" />
+        <input id="f-dt" class="input-field" placeholder="تا تاریخ" value="${dt}" style="max-width:120px" />
+        <button class="btn-secondary text-sm" onclick="Pages.applyFilter('dashboard')">اعمال</button>
+        <button class="btn-ghost text-sm" onclick="Pages.quickDate('dashboard','today')">امروز</button>
+        <button class="btn-ghost text-sm" onclick="Pages.clearFilter('dashboard')">پاک</button>
+      </div>
     </div>
     ${alertHtml}
 
@@ -440,6 +458,7 @@ Pages.entries = async function () {
       <input id="f-q" class="input-field" placeholder="جستجو..." value="${q}" style="max-width:160px" />
       <button class="btn-secondary text-sm" onclick="Pages.applyFilter('entries')">فیلتر</button>
       <button class="btn-ghost text-sm" onclick="Pages.quickDate('entries','today')">امروز</button>
+      <button class="btn-ghost text-sm" onclick="Pages.quickDate('entries','week')">۷ روز</button>
       <button class="btn-ghost text-sm" onclick="Pages.clearFilter('entries')">پاک</button>
     </div>
     <div class="glass-card rounded-2xl p-4">
@@ -591,6 +610,7 @@ Pages.wastes = async function () {
       <input id="f-q" class="input-field" placeholder="جستجو..." value="${q}" style="max-width:160px" />
       <button class="btn-secondary text-sm" onclick="Pages.applyFilter('wastes')">فیلتر</button>
       <button class="btn-ghost text-sm" onclick="Pages.quickDate('wastes','today')">امروز</button>
+      <button class="btn-ghost text-sm" onclick="Pages.quickDate('wastes','week')">۷ روز</button>
       <button class="btn-ghost text-sm" onclick="Pages.clearFilter('wastes')">پاک</button>
     </div>
     <div class="glass-card rounded-2xl p-4">
@@ -715,6 +735,7 @@ Pages.productions = async function () {
       <input id="f-q" class="input-field" placeholder="جستجو محصول/پرسنل..." value="${q}" style="max-width:180px" />
       <button class="btn-secondary text-sm" onclick="Pages.applyFilter('productions')">فیلتر</button>
       <button class="btn-ghost text-sm" onclick="Pages.quickDate('productions','today')">امروز</button>
+      <button class="btn-ghost text-sm" onclick="Pages.quickDate('productions','week')">۷ روز</button>
       <button class="btn-ghost text-sm" onclick="Pages.clearFilter('productions')">پاک</button>
     </div>
     <div class="glass-card rounded-2xl p-4">
@@ -913,7 +934,7 @@ Pages.materials = async function () {
       <div class="table-wrap">
         <table class="data">
           <thead><tr>
-            <th>کد</th><th>نام</th><th>واحد</th><th>موجودی اولیه</th><th>حداقل هشدار</th>
+            <th>کد</th><th>نام</th><th>واحد</th><th>واحد فرعی</th><th>موجودی اولیه</th><th>حداقل هشدار</th>
             <th>کل ورود</th><th>کل مصرف</th><th>ضایعات</th><th>برگشت</th><th>موجودی فعلی</th><th>وضعیت</th>
             ${canEdit ? '<th></th>' : ''}
           </tr></thead>
@@ -923,6 +944,7 @@ Pages.materials = async function () {
                 <td class="text-slate-400">${m.code}</td>
                 <td class="font-medium">${m.name}</td>
                 <td>${m.unit}</td>
+                <td class="text-slate-400 text-xs">${m.secondary_unit ? (m.secondary_unit + (m.unit_factor ? ' (×' + m.unit_factor + ')' : '')) : '—'}</td>
                 <td>${fmtNum(m.initial_stock)}</td>
                 <td>${fmtNum(m.min_alert)}</td>
                 <td class="text-brand-300">${fmtNum(m.total_in)}</td>
@@ -943,7 +965,7 @@ Pages.materials = async function () {
 
 Pages.showMaterialForm = async function (id) {
   if (!Auth.isAdmin()) return;
-  let item = { code: '', name: '', unit: 'کیلوگرم', initial_stock: 0, min_alert: 0, description: '', active: true };
+  let item = { code: '', name: '', unit: 'کیلوگرم', secondary_unit: '', unit_factor: '', initial_stock: 0, min_alert: 0, description: '', active: true };
   if (id) item = await DB.getById('materials', id) || item;
 
   showModal(`
@@ -952,14 +974,19 @@ Pages.showMaterialForm = async function (id) {
       <form id="mat-form" class="space-y-3">
         <div class="grid grid-cols-2 gap-3">
           <div><label class="text-xs text-slate-400">کد</label><input name="code" class="input-field" value="${item.code||''}" required ${id?'readonly':''} /></div>
-          <div><label class="text-xs text-slate-400">واحد</label><input name="unit" class="input-field" value="${item.unit||'کیلوگرم'}" /></div>
+          <div><label class="text-xs text-slate-400">واحد اصلی</label><input name="unit" class="input-field" value="${item.unit||'کیلوگرم'}" /></div>
         </div>
         <div><label class="text-xs text-slate-400">نام</label><input name="name" class="input-field" value="${item.name||''}" required /></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="text-xs text-slate-400">واحد فرعی (اختیاری)</label><input name="secondary_unit" class="input-field" value="${item.secondary_unit||''}" placeholder="مثلاً عدد" /></div>
+          <div><label class="text-xs text-slate-400">ضریب تبدیل (۱ اصلی = ؟ فرعی)</label><input name="unit_factor" type="number" step="0.01" class="input-field" value="${item.unit_factor||''}" placeholder="مثلاً 10" /></div>
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <div><label class="text-xs text-slate-400">موجودی اولیه</label><input name="initial_stock" type="number" step="0.01" class="input-field" value="${item.initial_stock||0}" /></div>
           <div><label class="text-xs text-slate-400">حداقل هشدار</label><input name="min_alert" type="number" step="0.01" class="input-field" value="${item.min_alert||0}" /></div>
         </div>
         <div><label class="text-xs text-slate-400">توضیحات</label><textarea name="description" class="input-field" rows="2">${item.description||''}</textarea></div>
+        <p class="text-[10px] text-slate-500">واحد فرعی فقط برای نمایش است و روی محاسبه موجودی تأثیر ندارد.</p>
         <div class="flex gap-2 pt-2">
           <button type="submit" class="btn-primary flex-1">ذخیره</button>
           <button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button>
@@ -976,6 +1003,7 @@ Pages.showMaterialForm = async function (id) {
       const data = Object.fromEntries(new FormData(ev.target).entries());
       data.initial_stock = Number(data.initial_stock);
       data.min_alert = Number(data.min_alert);
+      data.unit_factor = data.unit_factor !== '' ? Number(data.unit_factor) : null;
       data.active = 1;
       if (id) { data.id = id; await DB.put('materials', data); }
       else await DB.add('materials', data);
@@ -1428,11 +1456,178 @@ Pages.quickDate = function (page, mode) {
   const t = todayJalali();
   if (mode === 'today') {
     location.hash = page + '?df=' + encodeURIComponent(t) + '&dt=' + encodeURIComponent(t);
+  } else if (mode === 'week') {
+    // 7 days back approx (jalali string compare works for same year/month)
+    const parts = t.split('/').map(Number);
+    let d = parts[2] - 6;
+    let m = parts[1];
+    let y = parts[0];
+    if (d < 1) { d += 30; m -= 1; if (m < 1) { m = 12; y -= 1; } }
+    const from = y + '/' + String(m).padStart(2, '0') + '/' + String(Math.max(1, d)).padStart(2, '0');
+    location.hash = page + '?df=' + encodeURIComponent(from) + '&dt=' + encodeURIComponent(t);
   } else if (mode === 'clear') {
     location.hash = page;
   }
   navigate(page);
 };
+
+/* ========== AUDIT LOG PAGE ========== */
+Pages.audit = async function () {
+  if (!Auth.isAdmin()) return '<p class="text-red-400">دسترسی ندارید</p>';
+  let rows = [];
+  try {
+    rows = await Api.request('audit');
+  } catch (e) {
+    return `<div class="mb-6"><h1 class="text-2xl font-bold">لاگ فعالیت</h1>
+      <p class="text-amber-400 mt-4">لاگ فقط در حالت ابری (D1) در دسترس است. ${e.message || ''}</p></div>`;
+  }
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const q = (params.get('q') || '').toLowerCase();
+  if (q) {
+    rows = rows.filter(r =>
+      String(r.summary || '').toLowerCase().includes(q) ||
+      String(r.store_name || '').toLowerCase().includes(q) ||
+      String(r.full_name || r.username || '').toLowerCase().includes(q) ||
+      String(r.action || '').toLowerCase().includes(q)
+    );
+  }
+  return `
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold">📜 لاگ فعالیت</h1>
+        <p class="text-slate-400 text-sm">تاریخچه حذف‌ها و عملیات مهم (۵۰۰ رکورد اخیر)</p>
+      </div>
+      <div class="flex gap-2">
+        <input id="f-q" class="input-field" placeholder="جستجو..." value="${params.get('q') || ''}" style="max-width:180px" />
+        <button class="btn-secondary text-sm" onclick="const q=document.getElementById('f-q').value; location.hash='audit'+(q?'?q='+encodeURIComponent(q):''); navigate('audit')">جستجو</button>
+        <button class="btn-ghost text-sm" onclick="location.hash='audit'; navigate('audit')">پاک</button>
+      </div>
+    </div>
+    <div class="glass-card rounded-2xl p-4">
+      <div class="table-wrap max-h-[70vh] overflow-y-auto">
+        <table class="data text-xs">
+          <thead><tr><th>زمان</th><th>عمل</th><th>بخش</th><th>کاربر</th><th>خلاصه</th><th></th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map(r => `
+              <tr>
+                <td class="whitespace-nowrap text-slate-400">${(r.created_at || '').replace('T',' ').slice(0,19)}</td>
+                <td>${r.action === 'delete' ? '<span class="badge badge-danger">حذف</span>' : r.action}</td>
+                <td>${r.store_name || '—'}</td>
+                <td class="text-brand-300">${r.full_name || r.username || '—'}</td>
+                <td class="max-w-[280px] truncate" title="${(r.summary || '').replace(/"/g,'&quot;')}">${r.summary || '—'}</td>
+                <td>${r.action === 'delete' && r.store_name && r.record_id ? `<button class="btn-ghost text-xs text-cyan-300" onclick="Pages.restoreSoft('${r.store_name}',${r.record_id})">بازیابی</button>` : ''}</td>
+              </tr>
+            `).join('') : '<tr><td colspan="6" class="text-center text-slate-500 py-8">رکوردی نیست</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+};
+
+Pages.restoreSoft = async function (store, id) {
+  if (!Auth.isAdmin()) return;
+  if (!confirmAction('بازیابی این رکورد حذف‌شده؟')) return;
+  try {
+    await Api.request('restore', { method: 'POST', body: JSON.stringify({ store, id }) });
+    toast('بازیابی شد', 'success');
+    navigate('audit');
+  } catch (e) {
+    toast(e.message || 'خطا در بازیابی', 'error');
+  }
+};
+
+/* ========== SETTINGS PAGE ========== */
+Pages.settings = async function () {
+  if (!Auth.isAdmin()) return '<p class="text-red-400">دسترسی ندارید</p>';
+  let s = { company_name: 'غذای انصار', default_min_alert: 5, alert_enabled: true, backup_hint: true };
+  try {
+    if (window.Api && Api.online !== false) {
+      const r = await Api.request('settings');
+      if (r) s = { ...s, ...r };
+    } else {
+      const local = localStorage.getItem('kitchen_settings');
+      if (local) s = { ...s, ...JSON.parse(local) };
+    }
+  } catch (e) {
+    const local = localStorage.getItem('kitchen_settings');
+    if (local) try { s = { ...s, ...JSON.parse(local) }; } catch (_) {}
+  }
+  return `
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold">⚙️ تنظیمات سیستم</h1>
+      <p class="text-slate-400 text-sm">نام کترینگ، هشدارها و پیش‌فرض‌ها</p>
+    </div>
+    <div class="glass-card rounded-2xl p-6 max-w-lg">
+      <form id="settings-form" class="space-y-4">
+        <div>
+          <label class="text-xs text-slate-400">نام کترینگ / شرکت</label>
+          <input name="company_name" class="input-field" value="${(s.company_name || '').replace(/"/g,'&quot;')}" maxlength="80" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-400">حداقل هشدار پیش‌فرض (برای مواد جدید)</label>
+          <input name="default_min_alert" type="number" step="0.01" class="input-field" value="${s.default_min_alert ?? 5}" />
+        </div>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="alert_enabled" ${s.alert_enabled !== false ? 'checked' : ''} class="rounded" />
+          فعال بودن هشدار کمبود موجودی
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="backup_hint" ${s.backup_hint !== false ? 'checked' : ''} class="rounded" />
+          یادآوری پشتیبان‌گیری در گزارش‌ها
+        </label>
+        <button type="submit" class="btn-primary w-full">ذخیره تنظیمات</button>
+      </form>
+    </div>
+    <div class="glass-card rounded-2xl p-6 max-w-lg mt-4">
+      <h2 class="font-semibold mb-2">ثبت سریع</h2>
+      <p class="text-sm text-slate-400 mb-3">میانبر برای ثبت سریع ورود / تولید / ضایعات</p>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn-secondary text-sm" onclick="Pages.showEntryForm()">+ ورود سریع</button>
+        <button class="btn-secondary text-sm" onclick="Pages.showProdForm()">+ تولید سریع</button>
+        <button class="btn-secondary text-sm" onclick="Pages.showWasteForm()">+ ضایعات سریع</button>
+      </div>
+    </div>
+  `;
+};
+
+// bind settings form after render
+const _origNavSettings = typeof navigate === 'function' ? null : null;
+(function bindSettingsForm() {
+  const obs = new MutationObserver(() => {
+    const form = document.getElementById('settings-form');
+    if (!form || form.__bound) return;
+    form.__bound = true;
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const data = {
+        company_name: fd.get('company_name') || 'غذای انصار',
+        default_min_alert: Number(fd.get('default_min_alert')) || 5,
+        alert_enabled: !!fd.get('alert_enabled'),
+        backup_hint: !!fd.get('backup_hint'),
+      };
+      try {
+        localStorage.setItem('kitchen_settings', JSON.stringify(data));
+        if (window.Api) {
+          try { await Api.request('settings', { method: 'PUT', body: JSON.stringify(data) }); } catch (_) {}
+        }
+        toast('تنظیمات ذخیره شد', 'success');
+      } catch (e) {
+        toast(e.message || 'خطا', 'error');
+      }
+    };
+  });
+  if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+      const root = document.getElementById('page-content');
+      if (root) obs.observe(root, { childList: true, subtree: true });
+    });
+    // also observe now if already loaded
+    const root = document.getElementById('page-content');
+    if (root) obs.observe(root, { childList: true, subtree: true });
+  }
+})();
 
 
 Pages.lockToday = async function () {
