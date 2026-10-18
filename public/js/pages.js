@@ -22,54 +22,116 @@ Pages.dashboard = async function () {
     pStats[n].duration += Number(p.duration_minutes || 0);
   });
 
-
-  // --- داده‌های نمودار (واحد از تعریف ماده؛ کیلو/عدد) ---
   const unitOf = (name) => {
     const m = stock.find(x => x.name === name);
     return (m && m.unit) ? m.unit : 'کیلوگرم';
   };
   const unitShort = (u) => {
     if (!u) return '';
-    if (u.includes('عدد') || u === 'عدد') return 'عدد';
-    if (u.includes('کیلو')) return 'کیلو';
+    if (String(u).includes('عدد')) return 'عدد';
+    if (String(u).includes('کیلو')) return 'کیلو';
     return u;
   };
+
+  const COLORS = ['#1a9b55', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#84cc16'];
 
   const matConsume = {};
   productions.forEach(p => {
     const n = p.material_name || 'نامشخص';
     matConsume[n] = (matConsume[n] || 0) + Number(p.material_weight || 0);
   });
-  const topMats = Object.entries(matConsume).sort((a,b) => b[1]-a[1]).slice(0, 8);
-  const maxMat = topMats.length ? topMats[0][1] : 1;
+  const topMats = Object.entries(matConsume).sort((a, b) => b[1] - a[1]).slice(0, 7);
+  const sumMat = topMats.reduce((s, [, v]) => s + v, 0) || 1;
 
-  // روز: فقط وزن‌های کیلوگرمی برای جمع معنادار؛ موارد عددی جدا
   const dayWeight = {};
   productions.forEach(p => {
+    if (unitShort(unitOf(p.material_name)) === 'عدد') return;
     const d = p.date || '—';
-    const u = unitOf(p.material_name);
-    if (unitShort(u) === 'عدد') return; // در نمودار روز فقط کیلو
     dayWeight[d] = (dayWeight[d] || 0) + Number(p.material_weight || 0);
   });
-  const dayKeys = Object.keys(dayWeight).sort().slice(-10);
-  const maxDay = dayKeys.reduce((m, d) => Math.max(m, dayWeight[d]), 1) || 1;
+  const dayKeys = Object.keys(dayWeight).sort().slice(-8);
+  const sumDay = dayKeys.reduce((s, d) => s + dayWeight[d], 0) || 1;
 
-  // پرسنل: وزن کیلو + تعداد اقلام عددی جدا در برچسب
-  const staffList = Object.entries(pStats).sort((a,b) => b[1].weight - a[1].weight).slice(0, 8);
-  const maxStaff = staffList.length ? staffList[0][1].weight : 1;
+  const staffList = Object.entries(pStats).sort((a, b) => b[1].weight - a[1].weight).slice(0, 7);
+  const sumStaff = staffList.reduce((s, [, v]) => s + v.weight, 0) || 1;
 
-  const bar = (pct, color) => {
-    const w = Math.max(2, Math.min(100, Math.round(pct)));
-    return `<div class="h-2.5 rounded-full bg-slate-800 overflow-hidden"><div class="h-full rounded-full ${color}" style="width:${w}%"></div></div>`;
+  const stockGroups = [
+    { label: 'عادی', value: stock.filter(m => m.status === 'عادی').length, color: '#1a9b55' },
+    { label: 'هشدار', value: stock.filter(m => m.status === 'هشدار').length, color: '#f59e0b' },
+    { label: 'تمام شد', value: stock.filter(m => m.status === 'تمام شد').length, color: '#ef4444' },
+  ].filter(x => x.value > 0);
+  const sumStockG = stockGroups.reduce((s, x) => s + x.value, 0) || 1;
+
+  const byUser = {};
+  [...entries, ...productions, ...wastes].forEach(r => {
+    const u = r.created_by || 'نامشخص';
+    byUser[u] = (byUser[u] || 0) + 1;
+  });
+  const userList = Object.entries(byUser).sort((a, b) => b[1] - a[1]).slice(0, 7);
+  const sumUser = userList.reduce((s, [, v]) => s + v, 0) || 1;
+
+  const donutGradient = (items, total) => {
+    if (!items.length) return '#1e293b';
+    let acc = 0;
+    const parts = items.map((it) => {
+      const start = (acc / total) * 360;
+      acc += Number(it.value) || 0;
+      const end = (acc / total) * 360;
+      return it.color + ' ' + start + 'deg ' + end + 'deg';
+    });
+    return 'conic-gradient(' + parts.join(', ') + ')';
   };
 
-  const alerts = stock.filter(m => m.status !== 'عادی');
+  const donutCard = (title, sub, items, total, fmtFn) => {
+    if (!items.length) {
+      return '<div class="glass-card rounded-2xl p-5 min-h-[220px]"><h2 class="font-semibold mb-2">' + title + '</h2><p class="text-slate-500 text-sm">داده‌ای نیست</p></div>';
+    }
+    const grad = donutGradient(items, total);
+    const legend = items.map((it) => {
+      const val = fmtFn ? fmtFn(it) : it.value;
+      return '<div class="flex items-center gap-2 text-xs mb-1.5">' +
+        '<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:' + it.color + '"></span>' +
+        '<span class="truncate flex-1 text-slate-300">' + it.label + '</span>' +
+        '<span class="text-slate-100 font-medium whitespace-nowrap">' + val + '</span></div>';
+    }).join('');
+    return '<div class="glass-card rounded-2xl p-5">' +
+      '<h2 class="font-semibold mb-0.5">' + title + '</h2>' +
+      '<p class="text-xs text-slate-400 mb-4">' + sub + '</p>' +
+      '<div class="flex flex-col sm:flex-row items-center gap-5">' +
+      '<div class="relative w-36 h-36 flex-shrink-0">' +
+      '<div class="w-full h-full rounded-full shadow-lg" style="background:' + grad + '"></div>' +
+      '<div class="absolute inset-[22%] rounded-full bg-slate-900 border border-slate-700/40"></div>' +
+      '</div><div class="flex-1 w-full min-w-0">' + legend + '</div></div></div>';
+  };
 
+  const matItems = topMats.map(([name, w], i) => ({
+    label: name, value: w, color: COLORS[i % COLORS.length], unit: unitShort(unitOf(name)),
+  }));
+  const dayItems = dayKeys.map((d, i) => ({
+    label: d, value: dayWeight[d], color: COLORS[i % COLORS.length],
+  }));
+  const staffItems = staffList.map(([name, s], i) => ({
+    label: name, value: s.weight, color: COLORS[i % COLORS.length], count: s.count,
+  }));
+  const userItems = userList.map(([name, c], i) => ({
+    label: name, value: c, color: COLORS[i % COLORS.length],
+  }));
+
+  const chartsHtml =
+    '<div class="grid lg:grid-cols-2 gap-6 mb-8">' +
+    donutCard('📊 مصرف مواد', 'واحد هر ماده (کیلو یا عدد)', matItems, sumMat, (it) => fmtNum(it.value) + ' ' + (it.unit || '')) +
+    donutCard('📦 وضعیت موجودی', 'تعداد اقلام در هر وضعیت', stockGroups, sumStockG, (it) => it.value + ' قلم') +
+    donutCard('👨‍🍳 سهم پرسنل', 'بر اساس فیلد مصرف', staffItems, sumStaff, (it) => fmtNum(it.value) + ' · ' + (it.count || 0) + ' رکورد') +
+    donutCard('✍️ ثبت‌کننده‌ها', 'ورود + تولید + ضایعات', userItems, sumUser, (it) => it.value + ' رکورد') +
+    (dayItems.length ? donutCard('📅 تولید روزهای اخیر', 'فقط مواد کیلویی', dayItems, sumDay, (it) => fmtNum(it.value) + ' کیلو') : '') +
+    '</div>';
+
+  const alerts = stock.filter(m => m.status !== 'عادی');
   const alertHtml = alerts.length ? `
     <div class="alert-banner mb-6 fade-in">
       <div class="font-semibold text-amber-300 mb-2">⚠️ هشدار موجودی</div>
       <ul class="text-sm space-y-1">
-        ${alerts.map(m => `<li>• <strong>${m.name}</strong>: موجودی ${fmtNum(m.current_stock)} ${m.unit} — <span class="${m.status==='تمام شد'?'text-red-400':'text-amber-400'}">${m.status}</span></li>`).join('')}
+        ${alerts.map(m => `<li>• <strong>${m.name}</strong>: موجودی ${fmtNum(m.current_stock)} ${m.unit || ''} — <span class="${m.status === 'تمام شد' ? 'text-red-400' : 'text-amber-400'}">${m.status}</span></li>`).join('')}
       </ul>
     </div>` : '';
 
@@ -79,7 +141,6 @@ Pages.dashboard = async function () {
       <p class="text-slate-400 text-sm mt-1">خلاصه موجودی و عملکرد • ${todayJalali()}</p>
     </div>
     ${alertHtml}
-
     ${Auth.isAdmin() ? `
     <div class="glass-card rounded-2xl p-4 mb-6 flex flex-wrap items-center gap-3">
       <div class="flex-1 min-w-[200px]">
@@ -96,65 +157,20 @@ Pages.dashboard = async function () {
         <div class="text-2xl font-bold text-brand-400">${fmtNum(productions.length)}</div>
       </div>
       <div class="stat-card">
-        <div class="text-slate-400 text-xs">جمع فیلد مصرف تولید *</div>
+        <div class="text-slate-400 text-xs">جمع فیلد مصرف *</div>
         <div class="text-2xl font-bold text-cyan-400">${fmtNum(totalWeight)}</div>
-        <div class="text-[10px] text-slate-500 mt-1">* کیلو و عدد با هم جمع نمی‌شوند؛ به نمودار مواد نگاه کنید</div>
+        <div class="text-[10px] text-slate-500 mt-1">* کیلو و عدد مخلوط — نمودار را ببینید</div>
       </div>
       <div class="stat-card">
         <div class="text-slate-400 text-xs">تعداد محصولات</div>
         <div class="text-2xl font-bold text-violet-400">${fmtNum(totalQty)}</div>
       </div>
       <div class="stat-card">
-        <div class="text-slate-400 text-xs">تعداد ورود مواد</div>
+        <div class="text-slate-400 text-xs">رکورد ورود مواد</div>
         <div class="text-2xl font-bold text-amber-400">${fmtNum(entries.length)}</div>
       </div>
     </div>
-
-
-    <div class="grid lg:grid-cols-2 gap-6 mb-8">
-      <div class="glass-card rounded-2xl p-5">
-        <h2 class="font-semibold mb-1">📊 مصرف مواد (از روی تولید)</h2>
-        <p class="text-xs text-slate-400 mb-4">بر اساس واحد هر ماده (کیلو یا عدد)</p>
-        ${topMats.length ? topMats.map(([name, w]) => `
-          <div class="mb-3">
-            <div class="flex justify-between text-sm mb-1">
-              <span class="font-medium truncate max-w-[70%]">${name}</span>
-              <span class="text-brand-300">${fmtNum(w)} ${unitShort(unitOf(name))}</span>
-            </div>
-            ${bar((w / maxMat) * 100, 'bg-gradient-to-l from-brand-500 to-brand-700')}
-          </div>
-        `).join('') : '<p class="text-slate-500 text-sm">هنوز تولیدی ثبت نشده</p>'}
-      </div>
-      <div class="glass-card rounded-2xl p-5">
-        <h2 class="font-semibold mb-1">📅 وزن تولید بر اساس روز</h2>
-        <p class="text-xs text-slate-400 mb-4">۱۰ روز اخیر — فقط مواد کیلوگرمی (عدد جدا محاسبه می‌شود)</p>
-        ${dayKeys.length ? dayKeys.map(d => `
-          <div class="mb-3">
-            <div class="flex justify-between text-sm mb-1">
-              <span class="text-slate-300">${d}</span>
-              <span class="text-cyan-300">${fmtNum(dayWeight[d])} کیلو</span>
-            </div>
-            ${bar((dayWeight[d] / maxDay) * 100, 'bg-gradient-to-l from-cyan-400 to-cyan-700')}
-          </div>
-        `).join('') : '<p class="text-slate-500 text-sm">داده‌ای نیست</p>'}
-      </div>
-      <div class="glass-card rounded-2xl p-5 lg:col-span-2">
-        <h2 class="font-semibold mb-1">👨‍🍳 سهم پرسنل از وزن تولید</h2>
-        <p class="text-xs text-slate-400 mb-4">مرتب‌شده بر اساس وزن مواد مصرفی</p>
-        <div class="grid md:grid-cols-2 gap-x-8">
-          ${staffList.length ? staffList.map(([name, s]) => `
-            <div class="mb-3">
-              <div class="flex justify-between text-sm mb-1">
-                <span class="font-medium truncate max-w-[60%]">${name}</span>
-                <span class="text-violet-300">${fmtNum(s.weight)} (مجموع فیلد مصرف) · ${s.count} رکورد</span>
-              </div>
-              ${bar((s.weight / maxStaff) * 100, 'bg-gradient-to-l from-violet-400 to-violet-700')}
-            </div>
-          `).join('') : '<p class="text-slate-500 text-sm">داده‌ای نیست</p>'}
-        </div>
-      </div>
-    </div>
-
+    ${chartsHtml}
     <div class="grid lg:grid-cols-2 gap-6 mb-8">
       <div class="glass-card rounded-2xl p-5">
         <h2 class="font-semibold mb-4">📦 خلاصه موجودی مواد اولیه</h2>
@@ -186,9 +202,9 @@ Pages.dashboard = async function () {
         <h2 class="font-semibold mb-4">👨‍🍳 عملکرد پرسنل</h2>
         <div class="table-wrap max-h-80 overflow-y-auto">
           <table class="data">
-            <thead><tr><th>نام</th><th>رکورد</th><th>تعداد</th><th>وزن (کیلو)</th><th>مدت (دقیقه)</th></tr></thead>
+            <thead><tr><th>نام</th><th>رکورد</th><th>تعداد</th><th>مصرف</th><th>مدت (دقیقه)</th></tr></thead>
             <tbody>
-              ${Object.entries(pStats).sort((a,b)=>b[1].count-a[1].count).map(([name, s]) => `
+              ${Object.entries(pStats).sort((a, b) => b[1].count - a[1].count).map(([name, s]) => `
                 <tr>
                   <td class="font-medium">${name}</td>
                   <td>${s.count}</td>
@@ -204,10 +220,11 @@ Pages.dashboard = async function () {
     </div>
     <div class="glass-card rounded-2xl p-5">
       <h2 class="font-semibold mb-3">آمار سریع ضایعات</h2>
-      <p class="text-slate-400 text-sm">تعداد رکورد: <span class="text-white font-medium">${wastes.length}</span> • مجموع وزن: <span class="text-amber-300 font-medium">${fmtNum(wastes.reduce((s,w)=>s+Number(w.quantity||0),0))} کیلو</span></p>
+      <p class="text-slate-400 text-sm">تعداد رکورد: <span class="text-white font-medium">${wastes.length}</span> • مجموع فیلد مقدار: <span class="text-amber-300 font-medium">${fmtNum(wastes.reduce((s, w) => s + Number(w.quantity || 0), 0))}</span></p>
     </div>
   `;
 };
+
 
 /* ========== ENTRIES ========== */
 Pages.entries = async function () {
