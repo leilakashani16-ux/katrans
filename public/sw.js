@@ -1,9 +1,10 @@
-const CACHE = 'kitchen-v3';
+const CACHE = 'kitchen-v4';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './js/db.js',
+  './js/api.js',
   './js/auth.js',
   './js/utils.js',
   './js/pages.js',
@@ -33,20 +34,35 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+
   const url = new URL(e.request.url);
-  // only same-origin
+
+  // فقط same-origin
   if (url.origin !== self.location.origin) return;
 
+  // ===== مهم: API را هرگز کش نکن — همیشه از شبکه =====
+  if (url.pathname.startsWith('/api')) {
+    e.respondWith(
+      fetch(e.request).catch(() =>
+        new Response(JSON.stringify({ ok: false, error: 'offline' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+    );
+    return;
+  }
+
+  // فایل‌های استاتیک: شبکه اول، در صورت قطع بودن از کش
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      const fetched = fetch(e.request).then(res => {
+    fetch(e.request)
+      .then(res => {
         if (res && res.status === 200) {
           const clone = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, clone));
         }
         return res;
-      }).catch(() => cached);
-      return cached || fetched;
-    })
+      })
+      .catch(() => caches.match(e.request))
   );
 });
