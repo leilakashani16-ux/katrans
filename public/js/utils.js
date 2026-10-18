@@ -230,8 +230,10 @@ function printReceipt(p) {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: Tahoma, Arial, sans-serif;
-      padding: 12mm 10mm;
-      font-size: 13px;
+      padding: 4mm;
+      max-width: 80mm;
+      margin: 0 auto;
+      font-size: 12px;
       color: #000 !important;
       background: #fff !important;
       -webkit-print-color-adjust: exact;
@@ -248,6 +250,9 @@ function printReceipt(p) {
   </style>
 </head>
 <body>
+  <div style="text-align:center;margin-bottom:8px">
+    <img src="/logo-ansar.png" alt="" style="max-width:72px;height:auto" onerror="this.style.display='none'" />
+  </div>
   <h2>فیش تولید — غذای انصار</h2>
   <table>
     <tr><td class="label">تاریخ</td><td class="val">${p.date || '—'}</td></tr>

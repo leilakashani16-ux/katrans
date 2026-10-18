@@ -76,8 +76,17 @@ function logout() {
 }
 
 function isAdmin() {
-  return currentUser?.role === 'admin';
+  return currentUser?.role === 'admin'; // viewer cannot edit/delete
 }
+
+function isViewer() {
+  return currentUser?.role === 'viewer';
+}
+
+function canView() {
+  return !!currentUser;
+}
+
 function canEntry() {
   return currentUser?.role === 'admin' || currentUser?.role === 'entry';
 }
@@ -96,7 +105,7 @@ function requireAuth() {
   return true;
 }
 
-window.Auth = {
+window.Auth = { isViewer, canView, 
   login,
   logout,
   requireAuth,

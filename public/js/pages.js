@@ -37,6 +37,17 @@ Pages.dashboard = async function () {
       <p class="text-slate-400 text-sm mt-1">خلاصه موجودی و عملکرد • ${todayJalali()}</p>
     </div>
     ${alertHtml}
+
+    ${Auth.isAdmin() ? `
+    <div class="glass-card rounded-2xl p-4 mb-6 flex flex-wrap items-center gap-3">
+      <div class="flex-1 min-w-[200px]">
+        <div class="font-semibold text-sm">🔒 قفل روز (بستن شیفت)</div>
+        <div class="text-xs text-slate-400 mt-1">بعد از قفل، ورود/تولید/ضایعات آن تاریخ تغییر یا حذف نمی‌شود</div>
+      </div>
+      <button class="btn-secondary text-sm" onclick="Pages.lockToday()">قفل امروز</button>
+      <button class="btn-ghost text-sm" onclick="Pages.unlockToday()">باز کردن قفل امروز</button>
+      <button class="btn-ghost text-sm" onclick="Pages.showDayLocks()">لیست قفل‌ها</button>
+    </div>` : ''}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
       <div class="stat-card">
         <div class="text-slate-400 text-xs">رکوردهای تولید</div>
@@ -138,6 +149,7 @@ Pages.entries = async function () {
       <input id="f-dt" class="input-field" placeholder="تا تاریخ" value="${dt}" style="max-width:130px" />
       <input id="f-q" class="input-field" placeholder="جستجو..." value="${q}" style="max-width:160px" />
       <button class="btn-secondary text-sm" onclick="Pages.applyFilter('entries')">فیلتر</button>
+      <button class="btn-ghost text-sm" onclick="Pages.quickDate('entries','today')">امروز</button>
       <button class="btn-ghost text-sm" onclick="Pages.clearFilter('entries')">پاک</button>
     </div>
     <div class="glass-card rounded-2xl p-4">
@@ -240,7 +252,7 @@ Pages.showEntryForm = async function (id) {
 
 Pages.deleteEntry = async function (id) {
   if (!Auth.canEditDelete()) return toast('فقط مدیر', 'error');
-  if (!confirmAction('آیا از حذف این رکورد مطمئن هستید؟')) return;
+  if (!confirmAction('حذف این رکورد ورود؟ این کار برگشت‌ناپذیر است.')) return;
   await DB.remove('entries', id);
   toast('حذف شد', 'success');
   navigate('entries');
@@ -288,6 +300,7 @@ Pages.wastes = async function () {
       <input id="f-dt" class="input-field" placeholder="تا تاریخ" value="${dt}" style="max-width:130px" />
       <input id="f-q" class="input-field" placeholder="جستجو..." value="${q}" style="max-width:160px" />
       <button class="btn-secondary text-sm" onclick="Pages.applyFilter('wastes')">فیلتر</button>
+      <button class="btn-ghost text-sm" onclick="Pages.quickDate('wastes','today')">امروز</button>
       <button class="btn-ghost text-sm" onclick="Pages.clearFilter('wastes')">پاک</button>
     </div>
     <div class="glass-card rounded-2xl p-4">
@@ -363,7 +376,7 @@ Pages.showWasteForm = async function () {
 
 Pages.deleteWaste = async function (id) {
   if (!Auth.canEditDelete()) return;
-  if (!confirmAction('حذف شود؟')) return;
+  if (!confirmAction('حذف این رکورد؟ برگشت‌ناپذیر است.')) return;
   await DB.remove('wastes', id);
   toast('حذف شد', 'success');
   navigate('wastes');
@@ -411,6 +424,7 @@ Pages.productions = async function () {
       <input id="f-dt" class="input-field" placeholder="تا تاریخ" value="${dt}" style="max-width:130px" />
       <input id="f-q" class="input-field" placeholder="جستجو محصول/پرسنل..." value="${q}" style="max-width:180px" />
       <button class="btn-secondary text-sm" onclick="Pages.applyFilter('productions')">فیلتر</button>
+      <button class="btn-ghost text-sm" onclick="Pages.quickDate('productions','today')">امروز</button>
       <button class="btn-ghost text-sm" onclick="Pages.clearFilter('productions')">پاک</button>
     </div>
     <div class="glass-card rounded-2xl p-4">
@@ -562,7 +576,7 @@ Pages.printProd = async function (id) {
 
 Pages.deleteProd = async function (id) {
   if (!Auth.canEditDelete()) return;
-  if (!confirmAction('حذف شود؟')) return;
+  if (!confirmAction('حذف این رکورد؟ برگشت‌ناپذیر است.')) return;
   // also remove linked returns
   const returns = await DB.getAll('returns');
   for (const r of returns) if (r.production_id === id) await DB.remove('returns', r.id);
@@ -996,7 +1010,7 @@ Pages.users = async function () {
               <tr>
                 <td class="font-medium">${u.username}</td>
                 <td>${u.full_name || '—'}</td>
-                <td><span class="badge badge-ok">${u.role === 'admin' ? 'ادمین' : u.role === 'entry' ? 'ثبت ورود' : 'ثبت تولید'}</span></td>
+                <td><span class="badge badge-ok">${u.role === 'admin' ? 'ادمین' : u.role === 'entry' ? 'ثبت ورود' : u.role === 'viewer' ? 'ناظر' : 'ثبت تولید'}</span></td>
                 <td>${u.active !== false ? 'بله' : 'خیر'}</td>
                 <td class="space-x-1 space-x-reverse whitespace-nowrap">
                   <button class="btn-ghost text-xs" onclick="Pages.showUserForm(${u.id})">ویرایش</button>
@@ -1029,6 +1043,7 @@ Pages.showUserForm = async function (id) {
             <option value="admin" ${item.role==='admin'?'selected':''}>ادمین (دسترسی کامل)</option>
             <option value="entry" ${item.role==='entry'?'selected':''}>ثبت‌کننده ورود</option>
             <option value="production" ${item.role==='production'?'selected':''}>ثبت‌کننده تولید</option>
+            <option value="viewer" ${item.role==='viewer'?'selected':''}>ناظر (فقط مشاهده)</option>
           </select>
         </div>
         <div class="flex gap-2 pt-2">
@@ -1111,6 +1126,55 @@ Pages.showAuditLog = async function () {
       </table>`;
   } catch (e) {
     box.innerHTML = '<p class="text-red-400 text-sm">' + (e.message || 'خطا') + '</p>';
+  }
+};
+
+
+Pages.quickDate = function (page, mode) {
+  const t = todayJalali();
+  if (mode === 'today') {
+    location.hash = page + '?df=' + encodeURIComponent(t) + '&dt=' + encodeURIComponent(t);
+  } else if (mode === 'clear') {
+    location.hash = page;
+  }
+  navigate(page);
+};
+
+
+Pages.lockToday = async function () {
+  if (!Auth.isAdmin()) return;
+  const day = todayJalali();
+  if (!confirmAction('قفل کردن تاریخ ' + day + '؟ بعد از آن ورود/تولید/ضایعات این روز قابل تغییر نیست.')) return;
+  try {
+    await Api.request('day-lock', { method: 'POST', body: JSON.stringify({ day }) });
+    toast('روز قفل شد', 'success');
+  } catch (e) {
+    toast(e.message || 'خطا', 'error');
+  }
+};
+
+Pages.unlockToday = async function () {
+  if (!Auth.isAdmin()) return;
+  const day = todayJalali();
+  if (!confirmAction('باز کردن قفل ' + day + '؟')) return;
+  try {
+    await Api.request('day-lock?day=' + encodeURIComponent(day), { method: 'DELETE', body: JSON.stringify({ day }) });
+    toast('قفل باز شد', 'success');
+  } catch (e) {
+    toast(e.message || 'خطا', 'error');
+  }
+};
+
+Pages.showDayLocks = async function () {
+  if (!Auth.isAdmin()) return;
+  try {
+    const rows = await Api.request('day-locks');
+    const html = rows.length ? rows.map(r => `<tr><td>${r.day}</td><td>${r.locked_by||'—'}</td><td>${(r.locked_at||'').slice(0,19)}</td></tr>`).join('') : '<tr><td colspan="3">قفلی نیست</td></tr>';
+    showModal(`<div class="modal"><h3 class="text-lg font-bold mb-3">روزهای قفل‌شده</h3>
+      <table class="data text-sm"><thead><tr><th>روز</th><th>توسط</th><th>زمان</th></tr></thead><tbody>${html}</tbody></table>
+      <button class="btn-secondary mt-3 w-full" onclick="closeModal()">بستن</button></div>`);
+  } catch (e) {
+    toast(e.message || 'خطا', 'error');
   }
 };
 

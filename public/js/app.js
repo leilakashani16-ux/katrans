@@ -192,6 +192,12 @@ async function softRefreshIfNeeded() {
   if (isModalOpen()) return;
   if (!Auth.currentUser) return;
   try {
+    if (window.Api) {
+      const v = await Api.request('version');
+      const ver = Number(v.version || 0);
+      if (window.__dataVersion && ver === window.__dataVersion) return;
+      window.__dataVersion = ver;
+    }
     await navigate(currentPage);
   } catch (e) {
     console.warn('sync refresh failed', e);
@@ -201,10 +207,25 @@ async function softRefreshIfNeeded() {
 function startCloudSync() {
   if (window.__syncStarted) return;
   window.__syncStarted = true;
+  // 10 ثانیه — فقط وقتی version عوض شده صفحه رفرش می‌شود
   setInterval(() => softRefreshIfNeeded(), 10000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') softRefreshIfNeeded();
   });
+}
+
+function maybeBackupReminder() {
+  try {
+    if (!Auth.isAdmin()) return;
+    const key = 'kitchen_last_backup_hint';
+    const last = Number(localStorage.getItem(key) || 0);
+    const week = 7 * 24 * 60 * 60 * 1000;
+    if (Date.now() - last < week) return;
+    setTimeout(() => {
+      toast('یادآوری: از گزارش‌ها یک پشتیبان کامل دانلود کنید', 'info');
+      localStorage.setItem(key, String(Date.now()));
+    }, 4000);
+  } catch (e) {}
 }
 
 function showApp() {

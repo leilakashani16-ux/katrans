@@ -78,6 +78,21 @@ function actorLabel(user) {
   return String(user.full_name || user.username || '').trim();
 }
 
+
+async function bumpDataVersion(db) {
+  try {
+    await db.prepare(
+      "UPDATE app_meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'data_version'"
+    ).run();
+  } catch (e) {}
+}
+
+async function isDayLocked(db, day) {
+  if (!day) return false;
+  const row = await db.prepare('SELECT id FROM day_locks WHERE day = ?').bind(String(day)).first();
+  return !!row;
+}
+
 async function ensureSchema(db) {
   // Create tables if missing (idempotent)
   await db.batch([
@@ -335,18 +350,6 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     }
   }
 
-  // تضمین ورود admin با admin123 (فقط رمز ادمین؛ بقیه داده دست نخورده می‌ماند)
-  {
-    const hAdmin = await hashPassword('admin123');
-    const adm = await db.prepare('SELECT id FROM users WHERE username = ?').bind('admin').first();
-    if (adm) {
-      await db.prepare('UPDATE users SET password_hash = ?, active = 1 WHERE username = ?').bind(hAdmin, 'admin').run();
-    } else {
-      await db.prepare(
-        'INSERT INTO users (username, password_hash, role, full_name, active) VALUES (?, ?, ?, ?, 1)'
-      ).bind('admin', hAdmin, 'admin', 'مدیر سیستم').run();
-    }
-  }
 
 
   await db.prepare(`CREATE TABLE IF NOT EXISTS audit_logs (
@@ -365,6 +368,27 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     await ensureColumn(db, t, 'created_by', 'TEXT');
     await ensureColumn(db, t, 'updated_by', 'TEXT');
   }
+
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS day_locks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day TEXT UNIQUE NOT NULL,
+    locked_by TEXT,
+    locked_at TEXT DEFAULT (datetime('now')),
+    note TEXT
+  )`).run();
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  )`).run();
+
+  try {
+    const v = await db.prepare("SELECT value FROM app_meta WHERE key = 'data_version'").first();
+    if (!v) {
+      await db.prepare("INSERT INTO app_meta (key, value) VALUES ('data_version', '1')").run();
+    }
+  } catch (e) {}
 
 }
 
@@ -478,6 +502,48 @@ async function handleApi(request, env) {
       return json(stock);
     }
 
+
+    if (path === 'version' && request.method === 'GET') {
+      const row = await env.DB.prepare("SELECT value FROM app_meta WHERE key = 'data_version'").first();
+      return json({ version: Number(row?.value || 1), ts: new Date().toISOString() });
+    }
+
+    if (path === 'day-locks' && request.method === 'GET') {
+      if (!user) return json({ error: 'auth required' }, 401);
+      const rows = (await env.DB.prepare('SELECT * FROM day_locks ORDER BY day DESC LIMIT 90').all()).results || [];
+      return json(rows);
+    }
+
+    if (path === 'day-lock' && request.method === 'POST') {
+      if (!user || user.role !== 'admin') return json({ error: 'admin only' }, 403);
+      const body = await request.json().catch(() => ({}));
+      const day = String(body.day || '').trim();
+      if (!day) return json({ error: 'day required' }, 400);
+      try {
+        await env.DB.prepare(
+          'INSERT INTO day_locks (day, locked_by, note) VALUES (?, ?, ?)'
+        ).bind(day, actorLabel(user), body.note || null).run();
+      } catch (e) {
+        if (String(e.message || e).includes('UNIQUE')) {
+          return json({ ok: true, msg: 'قبلاً قفل شده' });
+        }
+        throw e;
+      }
+      await bumpDataVersion(env.DB);
+      return json({ ok: true, msg: 'روز قفل شد' });
+    }
+
+    if (path === 'day-lock' && request.method === 'DELETE') {
+      if (!user || user.role !== 'admin') return json({ error: 'admin only' }, 403);
+      const body = await request.json().catch(() => ({}));
+      const day = String(body.day || url.searchParams.get('day') || '').trim();
+      if (!day) return json({ error: 'day required' }, 400);
+      await env.DB.prepare('DELETE FROM day_locks WHERE day = ?').bind(day).run();
+      await bumpDataVersion(env.DB);
+      return json({ ok: true, msg: 'قفل روز باز شد' });
+    }
+
+
     if (path === 'audit' && request.method === 'GET') {
       if (!user || user.role !== 'admin') return json({ error: 'forbidden' }, 403);
       const rows = (await env.DB.prepare(
@@ -563,7 +629,48 @@ async function handleApi(request, env) {
         if (!body.created_at) body.created_at = new Date().toISOString();
       }
 
-      const keys = Object.keys(body).filter((k) => body[k] !== undefined);
+      
+      // قفل روز
+      if (['entries', 'wastes', 'productions', 'returns'].includes(store) && body.date) {
+        if (await isDayLocked(env.DB, body.date)) {
+          return json({ error: 'این تاریخ قفل شده و قابل ثبت نیست', code: 'DAY_LOCKED' }, 423);
+        }
+      }
+
+      // کنترل موجودی برای تولید (غیر از admin با force=1)
+      if (store === 'productions' && body.material_name && body.material_weight != null) {
+        const force = body.force === true || body.force === 1 || body.force === '1';
+        delete body.force;
+        if (!force || user.role !== 'admin') {
+          try {
+            const mats = (await env.DB.prepare('SELECT * FROM materials WHERE active = 1 OR active IS NULL').all()).results || [];
+            const m = mats.find((x) => x.name === body.material_name);
+            if (m) {
+              const entries = (await env.DB.prepare('SELECT * FROM entries').all()).results || [];
+              const productions = (await env.DB.prepare('SELECT * FROM productions').all()).results || [];
+              const wastes = (await env.DB.prepare('SELECT * FROM wastes').all()).results || [];
+              const returns = (await env.DB.prepare('SELECT * FROM returns').all()).results || [];
+              const totalIn = entries.filter((e) => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0);
+              const totalOut = productions.filter((p) => p.material_name === m.name).reduce((s, p) => s + Number(p.material_weight || 0), 0);
+              const totalWaste = wastes.filter((w) => w.material_name === m.name).reduce((s, w) => s + Number(w.quantity || 0), 0);
+              const totalReturn = returns.filter((r) => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
+              const current = Number(m.initial_stock || 0) + totalIn - totalOut - totalWaste + totalReturn;
+              const need = Number(body.material_weight || 0);
+              if (need > current + 0.0001) {
+                return json({
+                  error: `موجودی «${m.name}» کافی نیست. موجودی: ${Math.round(current * 100) / 100} — درخواست: ${need}`,
+                  code: 'INSUFFICIENT_STOCK',
+                  current_stock: Math.round(current * 100) / 100,
+                }, 409);
+              }
+            }
+          } catch (e) {
+            console.error('stock check', e);
+          }
+        }
+      }
+
+const keys = Object.keys(body).filter((k) => body[k] !== undefined);
       if (!keys.length) return json({ error: 'empty body' }, 400);
       const placeholders = keys.map(() => '?').join(',');
       const sql = `INSERT INTO ${store} (${keys.join(',')}) VALUES (${placeholders})`;
@@ -592,6 +699,7 @@ async function handleApi(request, env) {
         ).run();
       }
 
+      await bumpDataVersion(env.DB);
       return json({ id: newId, ok: true }, 201);
     }
 
@@ -614,6 +722,17 @@ async function handleApi(request, env) {
         body.updated_by = actorLabel(user);
         delete body.created_by; // تغییر ثبت‌کننده اولیه مجاز نیست
       }
+
+      if (['entries', 'wastes', 'productions', 'returns'].includes(store)) {
+        const existing = await env.DB.prepare(`SELECT * FROM ${store} WHERE id = ?`).bind(id).first();
+        if (existing && existing.date && await isDayLocked(env.DB, existing.date)) {
+          return json({ error: 'این تاریخ قفل شده و قابل ویرایش نیست', code: 'DAY_LOCKED' }, 423);
+        }
+        if (body.date && await isDayLocked(env.DB, body.date)) {
+          return json({ error: 'تاریخ مقصد قفل است', code: 'DAY_LOCKED' }, 423);
+        }
+      }
+
       const keys = Object.keys(body).filter((k) => body[k] !== undefined);
       if (!keys.length) return json({ error: 'empty' }, 400);
       const sets = keys.map((k) => `${k} = ?`).join(', ');
@@ -642,12 +761,16 @@ async function handleApi(request, env) {
           ).run();
         }
       }
+      await bumpDataVersion(env.DB);
       return json({ ok: true });
     }
 
     if (request.method === 'DELETE' && id) {
       if (!user || user.role !== 'admin') return json({ error: 'admin only' }, 403);
       const row = await env.DB.prepare(`SELECT * FROM ${store} WHERE id = ?`).bind(id).first();
+      if (row && row.date && await isDayLocked(env.DB, row.date)) {
+        return json({ error: 'حذف روی تاریخ قفل‌شده مجاز نیست', code: 'DAY_LOCKED' }, 423);
+      }
       let summary = store + ' #' + id;
       if (row) {
         summary = [row.date, row.material_name || row.product_name || row.name || row.username, row.quantity || row.material_weight]
@@ -674,6 +797,7 @@ async function handleApi(request, env) {
       if (store === 'productions') {
         await env.DB.prepare('DELETE FROM returns WHERE production_id = ?').bind(id).run();
       }
+      await bumpDataVersion(env.DB);
       return json({ ok: true });
     }
 
