@@ -972,7 +972,10 @@ Pages.users = async function () {
                 <td>${u.full_name || '—'}</td>
                 <td><span class="badge badge-ok">${u.role === 'admin' ? 'ادمین' : u.role === 'entry' ? 'ثبت ورود' : 'ثبت تولید'}</span></td>
                 <td>${u.active !== false ? 'بله' : 'خیر'}</td>
-                <td><button class="btn-ghost text-xs" onclick="Pages.showUserForm(${u.id})">ویرایش رمز/نقش</button></td>
+                <td class="space-x-1 space-x-reverse whitespace-nowrap">
+                  <button class="btn-ghost text-xs" onclick="Pages.showUserForm(${u.id})">ویرایش</button>
+                  ${u.username !== 'admin' ? `<button class="btn-ghost text-xs text-red-400" onclick="Pages.deleteUser(${u.id}, '${String(u.username).replace(/'/g, "\\'")}')">حذف</button>` : '<span class="text-xs text-slate-500">—</span>'}
+                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -1012,25 +1015,44 @@ Pages.showUserForm = async function (id) {
 
   document.getElementById('user-form').onsubmit = async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target).entries());
-    data.active = true;
-    if (id) {
-      data.id = id;
-      if (!data.password) {
-        const old = await DB.getById('users', id);
-        data.password = old.password;
+    const btn = ev.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'در حال ذخیره...'; }
+    try {
+      const data = Object.fromEntries(new FormData(ev.target).entries());
+      data.active = 1;
+      if (id) {
+        data.id = id;
+        // در حالت ابری: رمز خام بفرست تا سرور هش کند؛ اگر خالی = تغییر نده
+        if (!data.password) delete data.password;
+        await DB.put('users', data);
       } else {
-        data.password = await hashPassword(data.password);
+        if (!data.password) throw new Error('رمز عبور الزامی است');
+        await DB.add('users', data);
       }
-      await DB.put('users', data);
-    } else {
-      data.password = await hashPassword(data.password);
-      await DB.add('users', data);
+      toast('ذخیره شد', 'success');
+      closeModal();
+      navigate('users');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در ذخیره کاربر', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
     }
-    toast('ذخیره شد (رمز هش شد)', 'success');
-    closeModal();
-    navigate('users');
   };
+};
+
+
+Pages.deleteUser = async function (id, username) {
+  if (!Auth.isAdmin()) return toast('فقط مدیر', 'error');
+  if (username === 'admin') return toast('کاربر admin قابل حذف نیست', 'error');
+  if (!confirmAction('کاربر «' + username + '» حذف شود؟ این کار برگشت‌ناپذیر است.')) return;
+  try {
+    await DB.remove('users', id);
+    toast('کاربر حذف شد', 'success');
+    navigate('users');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا در حذف کاربر', 'error');
+  }
 };
 
 window.Pages = Pages;
