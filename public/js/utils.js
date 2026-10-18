@@ -104,23 +104,99 @@ function downloadJSON(obj, name) {
 
 /* ---------- PDF ---------- */
 function exportToPDF(title, columns, rows, fileName) {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-  doc.setFontSize(14);
-  doc.text(title, 14, 15);
-  doc.setFontSize(9);
-  doc.text('Kitchen Report - ' + new Date().toLocaleDateString('fa-IR'), 14, 22);
-  const head = [columns.map(c => c.header)];
-  const body = rows.map(r => columns.map(c => String(r[c.key] ?? '')));
-  doc.autoTable({
-    head, body, startY: 28,
-    styles: { fontSize: 8, cellPadding: 2, halign: 'right' },
-    headStyles: { fillColor: [13, 77, 46], textColor: 255 },
-    alternateRowStyles: { fillColor: [240, 240, 240] },
-    margin: { left: 10, right: 10 }
-  });
-  doc.save(fileName + '.pdf');
-  toast('فایل PDF دانلود شد', 'success');
+  // jsPDF فونت فارسی ندارد → خروجی HTML با Vazirmatn + چاپ/ذخیره PDF مرورگر
+  const head = columns.map(c => `<th>${escapeHtml(c.header)}</th>`).join('');
+  const body = rows.map(r => {
+    const tds = columns.map(c => `<td>${escapeHtml(String(r[c.key] ?? ''))}</td>`).join('');
+    return `<tr>${tds}</tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Vazirmatn', Tahoma, Arial, sans-serif;
+      direction: rtl;
+      color: #111;
+      padding: 16px 20px;
+      font-size: 12px;
+    }
+    h1 { font-size: 18px; margin: 0 0 4px; text-align: center; }
+    .meta { text-align: center; color: #555; font-size: 11px; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px 8px;
+      text-align: right;
+      vertical-align: top;
+    }
+    th {
+      background: #0d4d2e;
+      color: #fff;
+      font-weight: 700;
+      font-size: 11px;
+    }
+    tr:nth-child(even) td { background: #f5f5f5; }
+    .actions { text-align: center; margin-top: 16px; }
+    button {
+      font-family: inherit;
+      padding: 8px 20px;
+      margin: 0 4px;
+      border-radius: 8px;
+      border: 1px solid #0d4d2e;
+      background: #0d4d2e;
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button.secondary { background: #fff; color: #0d4d2e; }
+    @media print {
+      .actions { display: none !important; }
+      body { padding: 0; }
+      th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <div class="meta">غذای انصار — ${new Date().toLocaleString('fa-IR')}</div>
+  <table>
+    <thead><tr>${head}</tr></thead>
+    <tbody>${body || '<tr><td colspan="' + columns.length + '">داده‌ای نیست</td></tr>'}</tbody>
+  </table>
+  <div class="actions">
+    <button onclick="window.print()">چاپ / ذخیره PDF</button>
+    <button class="secondary" onclick="window.close()">بستن</button>
+  </div>
+  <script>
+    // اگر کاربر خواست مستقیم دیالوگ چاپ باز شود
+    setTimeout(function(){ /* window.print(); */ }, 400);
+  </script>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) {
+    toast('پاپ‌آپ مسدود است — اجازه پاپ‌آپ بدهید', 'error');
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  toast('گزارش باز شد — از «چاپ / ذخیره PDF» ذخیره کنید', 'success');
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function confirmAction(msg) {
