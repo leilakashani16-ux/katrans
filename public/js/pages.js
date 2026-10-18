@@ -912,14 +912,16 @@ Pages.personnel = async function () {
         <h1 class="text-2xl font-bold">پرسنل تولید</h1>
         <p class="text-slate-400 text-sm">لیست کارکنان آشپزخانه</p>
       </div>
-      ${canEdit ? `<button class="btn-primary" onclick="Pages.showPersonForm()">+ افزودن پرسنل</button>` : ''}
+      <div class="flex gap-2">
+        <button class="btn-secondary" onclick="Pages.staffReportPrompt()">گزارش کار پرسنل</button>
+        ${canEdit ? `<button class="btn-primary" onclick="Pages.showPersonForm()">+ افزودن پرسنل</button>` : ''}
+      </div>
     </div>
     <div class="glass-card rounded-2xl p-4">
       <div class="table-wrap">
         <table class="data">
           <thead><tr>
-            <th>کد</th><th>نام</th><th>سمت</th><th>فعال</th>
-            ${canEdit ? '<th></th>' : ''}
+            <th>کد</th><th>نام</th><th>سمت</th><th>فعال</th><th></th>
           </tr></thead>
           <tbody>
             ${list.map(p => `
@@ -928,10 +930,11 @@ Pages.personnel = async function () {
                 <td class="font-medium">${p.name}</td>
                 <td>${p.position || '—'}</td>
                 <td>${p.active !== false ? '<span class="badge badge-ok">بله</span>' : '<span class="badge badge-danger">خیر</span>'}</td>
-                ${canEdit ? `<td class="space-x-1 space-x-reverse whitespace-nowrap">
-                  <button class="btn-ghost text-xs" onclick="Pages.showPersonForm(${p.id})">ویرایش</button>
-                  <button class="btn-ghost text-xs text-red-400" onclick="Pages.deletePerson(${p.id}, '${String(p.name||'').replace(/'/g, "\\'")}')">حذف</button>
-                </td>` : ''}
+                <td class="space-x-1 space-x-reverse whitespace-nowrap">
+                  <button class="btn-ghost text-xs text-brand-300" onclick="Pages.staffReportPrompt('${String(p.name||'').replace(/'/g, "\\'")}')">گزارش کار</button>
+                  ${canEdit ? `<button class="btn-ghost text-xs" onclick="Pages.showPersonForm(${p.id})">ویرایش</button>
+                  <button class="btn-ghost text-xs text-red-400" onclick="Pages.deletePerson(${p.id}, '${String(p.name||'').replace(/'/g, "\\'")}')">حذف</button>` : ''}
+                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -1009,6 +1012,7 @@ Pages.reports = async function () {
         <button class="btn-secondary w-full" onclick="Pages.exportProds()">📥 گزارش تولید</button>
         <button class="btn-secondary w-full" onclick="Pages.exportWastes()">📥 گزارش ضایعات</button>
         <button class="btn-secondary w-full" onclick="Pages.exportStock()">📥 گزارش موجودی تفصیلی</button>
+        <button class="btn-secondary w-full" onclick="Pages.staffReportPrompt()">👤 گزارش کار یک پرسنل</button>
       </div>
       <div class="glass-card rounded-2xl p-6 space-y-3">
         <h2 class="font-semibold">گزارش‌های PDF</h2>
@@ -1282,5 +1286,125 @@ Pages.showDayLocks = async function () {
     toast(e.message || 'خطا', 'error');
   }
 };
+
+
+Pages.staffReportPrompt = async function (preselectName) {
+  try {
+    const personnel = (await DB.getAll('personnel')).filter(p => p.active !== false);
+    const names = personnel.map(p => p.name).filter(Boolean);
+    const prods = await DB.getAll('productions');
+    prods.forEach(p => {
+      if (p.producer_name && !names.includes(p.producer_name)) names.push(p.producer_name);
+    });
+    names.sort((a, b) => a.localeCompare(b, 'fa'));
+    const today = todayJalali();
+    const opts = names.map(n => {
+      const safe = String(n).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+      const sel = preselectName === n ? ' selected' : '';
+      return '<option value="' + safe + '"' + sel + '>' + safe + '</option>';
+    }).join('');
+
+    showModal(
+      '<div class="modal max-w-md">' +
+      '<h3 class="text-lg font-bold mb-4">گزارش کار پرسنل</h3>' +
+      '<form id="staff-report-form" class="space-y-3">' +
+      '<div><label class="text-xs text-slate-400">نام پرسنل</label>' +
+      '<select name="name" class="input-field" required><option value="">انتخاب کنید</option>' + opts + '</select></div>' +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<div><label class="text-xs text-slate-400">از تاریخ</label><input name="df" class="input-field" value="' + today + '" /></div>' +
+      '<div><label class="text-xs text-slate-400">تا تاریخ</label><input name="dt" class="input-field" value="' + today + '" /></div>' +
+      '</div>' +
+      '<p class="text-xs text-slate-500">برای یک روز، از و تا را یکسان بگذارید.</p>' +
+      '<div class="flex gap-2 pt-2">' +
+      '<button type="submit" class="btn-primary flex-1">مشاهده و چاپ</button>' +
+      '<button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button>' +
+      '</div></form></div>'
+    );
+
+    document.getElementById('staff-report-form').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const fd = Object.fromEntries(new FormData(ev.target).entries());
+      if (!fd.name) return toast('پرسنل را انتخاب کنید', 'error');
+      closeModal();
+      await Pages.printStaffReport(fd.name, fd.df || '', fd.dt || '');
+    };
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا', 'error');
+  }
+};
+
+Pages.printStaffReport = async function (name, df, dt) {
+  try {
+    let list = await DB.getAll('productions');
+    list = list.filter(p => (p.producer_name || '') === name);
+    if (df && typeof jalaliCompare === 'function') list = list.filter(p => jalaliCompare(p.date, df) >= 0);
+    if (dt && typeof jalaliCompare === 'function') list = list.filter(p => jalaliCompare(p.date, dt) <= 0);
+    list.sort((a, b) => String(a.date||'').localeCompare(String(b.date||'')) || (a.id||0) - (b.id||0));
+
+    const sumQty = list.reduce((s, p) => s + Number(p.quantity || 0), 0);
+    const sumW = list.reduce((s, p) => s + Number(p.material_weight || 0), 0);
+    const sumDur = list.reduce((s, p) => s + Number(p.duration_minutes || 0), 0);
+    const rangeLabel = (df && dt) ? (df === dt ? df : df + ' تا ' + dt) : 'همه تاریخ‌ها';
+    const esc = (s) => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    const rows = list.map((p, i) =>
+      '<tr><td>' + (i+1) + '</td><td>' + esc(p.date) + '</td><td>' + esc(p.product_name) +
+      '</td><td>' + esc(p.quantity) + '</td><td>' + esc(p.material_weight) +
+      '</td><td>' + esc(p.material_name) + '</td><td>' + esc(p.shift_code) +
+      '</td><td>' + esc(p.duration_minutes) + '</td><td>' + esc(p.notes) + '</td></tr>'
+    ).join('');
+
+    const html = '<!DOCTYPE html><html dir="rtl" lang="fa"><head><meta charset="utf-8"/>' +
+      '<title>گزارش کار — ' + esc(name) + '</title>' +
+      '<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">' +
+      '<style>*{box-sizing:border-box}body{font-family:Vazirmatn,Tahoma,sans-serif;direction:rtl;color:#111;padding:16px 20px;font-size:12px}' +
+      '.head{text-align:center;margin-bottom:12px;border-bottom:2px solid #0d4d2e;padding-bottom:10px}' +
+      '.head img{max-height:56px;margin-bottom:6px}h1{font-size:18px;margin:0 0 4px}.meta{color:#444;font-size:12px;margin:4px 0}' +
+      '.sum{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}' +
+      '.sum div{background:#f0f7f2;border:1px solid #c5e0d0;border-radius:8px;padding:8px 12px}.sum b{color:#0d4d2e}' +
+      'table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border:1px solid #ccc;padding:5px 6px;text-align:right}' +
+      'th{background:#0d4d2e;color:#fff;font-size:11px}tr:nth-child(even) td{background:#f7f7f7}' +
+      '.foot{margin-top:18px;font-size:11px;color:#555;display:flex;justify-content:space-between}' +
+      '.sign{margin-top:28px;display:flex;justify-content:space-between}' +
+      '.sign div{width:40%;text-align:center;border-top:1px solid #999;padding-top:6px}' +
+      '.actions{text-align:center;margin:16px 0}' +
+      'button{font-family:inherit;padding:8px 18px;margin:0 4px;border-radius:8px;border:1px solid #0d4d2e;background:#0d4d2e;color:#fff;cursor:pointer}' +
+      'button.sec{background:#fff;color:#0d4d2e}' +
+      '@media print{.actions{display:none!important}body{padding:0}th{-webkit-print-color-adjust:exact;print-color-adjust:exact}}' +
+      '</style></head><body>' +
+      '<div class="head"><img src="/logo-ansar.png" alt="" onerror="this.style.display=\'none\'"/>' +
+      '<h1>گزارش کار پرسنل — غذای انصار</h1>' +
+      '<div class="meta">نام: <strong>' + esc(name) + '</strong></div>' +
+      '<div class="meta">بازه: ' + esc(rangeLabel) + '</div>' +
+      '<div class="meta">تاریخ تهیه: ' + new Date().toLocaleString('fa-IR') + '</div></div>' +
+      '<div class="sum">' +
+      '<div>تعداد رکورد: <b>' + list.length + '</b></div>' +
+      '<div>جمع تعداد تولید: <b>' + sumQty + '</b></div>' +
+      '<div>جمع مصرف: <b>' + sumW + '</b></div>' +
+      '<div>جمع مدت (دقیقه): <b>' + sumDur + '</b></div></div>' +
+      '<table><thead><tr><th>#</th><th>تاریخ</th><th>محصول</th><th>تعداد</th><th>مصرف</th><th>ماده</th><th>شیفت</th><th>مدت</th><th>توضیح</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="9" style="text-align:center">در این بازه رکوردی نیست</td></tr>') +
+      '</tbody></table>' +
+      '<div class="sign"><div>امضای پرسنل</div><div>امضای مسئول / سرآشپز</div></div>' +
+      '<div class="foot"><span>سیستم گردش مواد — غذای انصار</span><span>سوابق تولید</span></div>' +
+      '<div class="actions"><button onclick="window.print()">چاپ / ذخیره PDF</button>' +
+      '<button class="sec" onclick="window.close()">بستن</button></div></body></html>';
+
+    const w = window.open('', '_blank');
+    if (!w) {
+      toast('پاپ‌آپ مسدود است — اجازه پاپ‌آپ بدهید', 'error');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    toast('گزارش باز شد', 'success');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا در ساخت گزارش', 'error');
+  }
+};
+
 
 window.Pages = Pages;
