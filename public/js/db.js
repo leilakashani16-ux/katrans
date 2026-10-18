@@ -6,7 +6,7 @@ const DB_VERSION = 1;
 
 let db = null;
 
-const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings'];
+const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans'];
 
 function openDB() {
   return new Promise((resolve, reject) => {

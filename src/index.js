@@ -7,7 +7,7 @@
  * Requires D1 binding named "DB"
  */
 
-const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns']);
+const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans']);
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -370,6 +370,16 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
   }
 
 
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS daily_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day TEXT NOT NULL,
+    product_name TEXT NOT NULL,
+    target_qty REAL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+
   await db.prepare(`CREATE TABLE IF NOT EXISTS day_locks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     day TEXT UNIQUE NOT NULL,
@@ -599,7 +609,7 @@ async function handleApi(request, env) {
       if (store === 'productions' && !['admin', 'production'].includes(user.role)) {
         return json({ error: 'forbidden' }, 403);
       }
-      if (['materials', 'products', 'personnel'].includes(store) && user.role !== 'admin') {
+      if (['materials', 'products', 'personnel', 'daily_plans'].includes(store) && user.role !== 'admin') {
         return json({ error: 'admin only' }, 403);
       }
 

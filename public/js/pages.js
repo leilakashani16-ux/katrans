@@ -8,6 +8,10 @@ Pages.dashboard = async function () {
   const entries = await DB.getAll('entries');
   const productions = await DB.getAll('productions');
   const wastes = await DB.getAll('wastes');
+  let products = [];
+  try { products = await DB.getAll('products'); } catch (e) { products = []; }
+  let plans = [];
+  try { plans = (await DB.getAll('daily_plans')) || []; } catch (e) { plans = []; }
 
   const totalWeight = productions.reduce((s, p) => s + Number(p.material_weight || 0), 0);
   const totalQty = productions.reduce((s, p) => s + Number(p.quantity || 0), 0);
@@ -126,6 +130,76 @@ Pages.dashboard = async function () {
     (dayItems.length ? donutCard('📅 تولید روزهای اخیر', 'فقط مواد کیلویی', dayItems, sumDay, (it) => fmtNum(it.value) + ' کیلو') : '') +
     '</div>';
 
+
+  // —— ویژگی‌های هوشمند ——
+  const today = todayJalali();
+  // مصرف ۳ روز اخیر برای پیش‌بینی
+  const recentDays = [...new Set(productions.map(p => p.date).filter(Boolean))].sort().slice(-3);
+  const predictRows = stock.map(m => {
+    let used = 0;
+    recentDays.forEach(d => {
+      used += productions.filter(p => p.date === d && p.material_name === m.name)
+        .reduce((s, p) => s + Number(p.material_weight || 0), 0);
+    });
+    const daily = recentDays.length ? used / recentDays.length : 0;
+    const cur = Number(m.current_stock || 0);
+    let daysLeft = null;
+    if (daily > 0.001) daysLeft = Math.round((cur / daily) * 10) / 10;
+    return { ...m, dailyAvg: Math.round(daily * 100) / 100, daysLeft };
+  }).filter(m => m.daysLeft != null && m.daysLeft <= 5 && m.current_stock > 0)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+
+  // ضریب تبدیل: ماده مصرفی / تعداد برای هر محصول
+  const convMap = {};
+  productions.forEach(p => {
+    const key = p.product_name || '—';
+    if (!convMap[key]) convMap[key] = { w: 0, q: 0, n: 0, mat: p.material_name };
+    convMap[key].w += Number(p.material_weight || 0);
+    convMap[key].q += Number(p.quantity || 0);
+    convMap[key].n += 1;
+  });
+  const conversions = Object.entries(convMap).map(([name, v]) => {
+    const actual = v.q > 0 ? v.w / v.q : 0;
+    const def = products.find(x => x.name === name);
+    const expected = def ? Number(def.weight_per_unit || 0) / 1000 : null; // اگر گرم باشد
+    // weight_per_unit در سیستم گرم است؛ material_weight کیلو → actual کیلو per unit
+    const expectedKg = def && def.weight_per_unit ? Number(def.weight_per_unit) / 1000 : null;
+    return {
+      name,
+      actual: Math.round(actual * 1000) / 1000,
+      expected: expectedKg,
+      samples: v.n,
+      mat: v.mat,
+    };
+  }).filter(c => c.samples >= 1).sort((a, b) => b.samples - a.samples).slice(0, 8);
+
+  // جدول افتخار امروز
+  const todayProds = productions.filter(p => p.date === today);
+  const board = {};
+  todayProds.forEach(p => {
+    const n = p.producer_name || 'نامشخص';
+    if (!board[n]) board[n] = { qty: 0, weight: 0, count: 0 };
+    board[n].qty += Number(p.quantity || 0);
+    board[n].weight += Number(p.material_weight || 0);
+    board[n].count += 1;
+  });
+  const leaderboard = Object.entries(board).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5);
+
+  // برنامه امروز vs واقعی
+  const todayPlans = plans.filter(pl => pl.day === today);
+  const planVsActual = todayPlans.map(pl => {
+    const done = todayProds.filter(p => p.product_name === pl.product_name)
+      .reduce((s, p) => s + Number(p.quantity || 0), 0);
+    const target = Number(pl.target_qty || 0);
+    return {
+      product: pl.product_name,
+      target,
+      done,
+      pct: target > 0 ? Math.round((done / target) * 100) : 0,
+    };
+  });
+
+
   const alerts = stock.filter(m => m.status !== 'عادی');
   const alertHtml = alerts.length ? `
     <div class="alert-banner mb-6 fade-in">
@@ -141,6 +215,88 @@ Pages.dashboard = async function () {
       <p class="text-slate-400 text-sm mt-1">خلاصه موجودی و عملکرد • ${todayJalali()}</p>
     </div>
     ${alertHtml}
+
+    ${predictRows.length ? `
+    <div class="glass-card rounded-2xl p-4 mb-6 border border-amber-500/30">
+      <h2 class="font-semibold text-amber-300 mb-2">🔮 پیش‌بینی اتمام موجودی (بر اساس میانگین ۳ روز اخیر)</h2>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
+        ${predictRows.map(m => `
+          <div class="bg-slate-800/50 rounded-xl px-3 py-2 flex justify-between gap-2">
+            <span class="font-medium truncate">${m.name}</span>
+            <span class="${m.daysLeft <= 1 ? 'text-red-400' : 'text-amber-300'} whitespace-nowrap">≈ ${fmtNum(m.daysLeft)} روز دیگر</span>
+          </div>
+        `).join('')}
+      </div>
+      <p class="text-[10px] text-slate-500 mt-2">تخمینی است؛ خرید و ضایعات می‌تواند تغییرش دهد.</p>
+    </div>` : ''}
+
+    <div class="grid lg:grid-cols-2 gap-6 mb-8">
+      <div class="glass-card rounded-2xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">🏆 افتخار شیفت امروز</h2>
+          <button class="btn-ghost text-xs" onclick="Pages.shiftSummary()">خلاصه پایان شیفت</button>
+        </div>
+        ${leaderboard.length ? `
+          <div class="space-y-2">
+            ${leaderboard.map(([name, s], i) => `
+              <div class="flex items-center gap-3 text-sm">
+                <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${i===0?'bg-amber-500 text-slate-900':i===1?'bg-slate-400 text-slate-900':i===2?'bg-amber-800 text-white':'bg-slate-700'}">${i+1}</span>
+                <span class="flex-1 font-medium truncate">${name}</span>
+                <span class="text-slate-400 text-xs">${s.count} رکورد</span>
+                <span class="text-brand-300 font-medium">${fmtNum(s.qty)}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : `<p class="text-slate-500 text-sm">امروز هنوز تولیدی ثبت نشده · ${today}</p>`}
+      </div>
+      <div class="glass-card rounded-2xl p-5">
+        <h2 class="font-semibold mb-3">⚗️ ضریب تبدیل ماده → محصول</h2>
+        <p class="text-xs text-slate-400 mb-3">میانگین مصرف واقعی به ازای هر واحد تولید</p>
+        ${conversions.length ? `
+          <div class="table-wrap max-h-56 overflow-y-auto">
+            <table class="data text-xs">
+              <thead><tr><th>محصول</th><th>مصرف/واحد</th><th>تعریف</th><th>نمونه</th></tr></thead>
+              <tbody>
+                ${conversions.map(c => `
+                  <tr>
+                    <td class="font-medium">${c.name}</td>
+                    <td class="text-cyan-300">${fmtNum(c.actual)}</td>
+                    <td class="text-slate-400">${c.expected != null ? fmtNum(c.expected) : '—'}</td>
+                    <td>${c.samples}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        ` : `<p class="text-slate-500 text-sm">با ثبت تولید محاسبه می‌شود</p>`}
+      </div>
+    </div>
+
+    <div class="glass-card rounded-2xl p-5 mb-8">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div>
+          <h2 class="font-semibold">📋 برنامه امروز در برابر واقعیت</h2>
+          <p class="text-xs text-slate-400">هدف صبح vs تولید ثبت‌شده · ${today}</p>
+        </div>
+        ${Auth.isAdmin() ? `<button class="btn-secondary text-sm" onclick="Pages.planForm()">+ هدف روزانه</button>` : ''}
+      </div>
+      ${planVsActual.length ? `
+        <div class="space-y-3">
+          ${planVsActual.map(r => `
+            <div>
+              <div class="flex justify-between text-sm mb-1">
+                <span class="font-medium">${r.product}</span>
+                <span>${fmtNum(r.done)} / ${fmtNum(r.target)} <span class="text-slate-400">(${r.pct}%)</span></span>
+              </div>
+              <div class="h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                <div class="h-full rounded-full ${r.pct>=100?'bg-brand-500':r.pct>=70?'bg-cyan-500':'bg-amber-500'}" style="width:${Math.min(100,r.pct)}%"></div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : `<p class="text-slate-500 text-sm">هدفی برای امروز تعریف نشده. مدیر می‌تواند هدف بگذارد.</p>`}
+    </div>
+
     ${Auth.isAdmin() ? `
     <div class="glass-card rounded-2xl p-4 mb-6 flex flex-wrap items-center gap-3">
       <div class="flex-1 min-w-[200px]">
@@ -1403,6 +1559,122 @@ Pages.printStaffReport = async function (name, df, dt) {
   } catch (e) {
     console.error(e);
     toast(e.message || 'خطا در ساخت گزارش', 'error');
+  }
+};
+
+
+
+Pages.toggleNightMode = function () {
+  const on = document.documentElement.classList.toggle('night-shift');
+  localStorage.setItem('kitchen_night_shift', on ? '1' : '0');
+  toast(on ? 'حالت شیفت شب روشن شد' : 'حالت عادی', 'info');
+};
+
+
+Pages.shiftSummary = async function () {
+  try {
+    const today = todayJalali();
+    const entries = await DB.getAll('entries');
+    const productions = await DB.getAll('productions');
+    const wastes = await DB.getAll('wastes');
+    const stock = await DB.calcStock();
+    const eT = entries.filter(x => x.date === today);
+    const pT = productions.filter(x => x.date === today);
+    const wT = wastes.filter(x => x.date === today);
+    const sumProd = pT.reduce((s, x) => s + Number(x.quantity || 0), 0);
+    const sumW = pT.reduce((s, x) => s + Number(x.material_weight || 0), 0);
+    const sumWaste = wT.reduce((s, x) => s + Number(x.quantity || 0), 0);
+    const alerts = stock.filter(m => m.status !== 'عادی').slice(0, 5);
+    const board = {};
+    pT.forEach(pr => {
+      const n = pr.producer_name || 'نامشخص';
+      board[n] = (board[n] || 0) + Number(pr.quantity || 0);
+    });
+    const top = Object.entries(board).sort((a, b) => b[1] - a[1])[0];
+    const lines = [
+      '📋 خلاصه شیفت — غذای انصار',
+      'تاریخ: ' + today,
+      '——————————',
+      'ورود مواد: ' + eT.length + ' رکورد',
+      'تولید: ' + pT.length + ' رکورد · تعداد ' + sumProd + ' · مصرف ' + sumW,
+      'ضایعات: ' + wT.length + ' رکورد · مقدار ' + sumWaste,
+      top ? ('بیشترین تولید امروز: ' + top[0] + ' (' + top[1] + ')') : 'تولید ثبت نشده',
+      '——————————',
+      'مواد نیازمند توجه:',
+    ].concat(
+      alerts.length ? alerts.map(m => '• ' + m.name + ': ' + m.current_stock + ' ' + (m.unit || '') + ' (' + m.status + ')') : ['• مورد بحرانی نیست'],
+      ['——————————', 'تهیه‌شده در ' + new Date().toLocaleString('fa-IR')]
+    );
+    const text = lines.join('\n');
+    const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    showModal(
+      '<div class="modal max-w-lg"><h3 class="text-lg font-bold mb-2">خلاصه پایان شیفت</h3>' +
+      '<p class="text-xs text-slate-400 mb-3">کپی کن و برای مدیر بفرست</p>' +
+      '<textarea id="shift-summary-text" class="input-field font-mono text-xs h-56" readonly>' + safe + '</textarea>' +
+      '<div class="flex flex-wrap gap-2 mt-3">' +
+      '<button type="button" class="btn-primary flex-1" id="btn-copy-shift">کپی متن</button>' +
+      '<button type="button" class="btn-secondary" onclick="Pages.printShiftSummary()">چاپ</button>' +
+      '<button type="button" class="btn-ghost" onclick="closeModal()">بستن</button></div></div>'
+    );
+    document.getElementById('btn-copy-shift').onclick = async function () {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('کپی شد', 'success');
+      } catch (err) {
+        document.getElementById('shift-summary-text').select();
+        toast('Ctrl+C را بزنید', 'info');
+      }
+    };
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا', 'error');
+  }
+};
+
+Pages.printShiftSummary = function () {
+  const el = document.getElementById('shift-summary-text');
+  if (!el) return;
+  const w = window.open('', '_blank');
+  if (!w) return toast('پاپ‌آپ مسدود است', 'error');
+  w.document.write('<html dir="rtl"><head><meta charset="utf-8"><title>خلاصه شیفت</title><style>body{font-family:Tahoma,sans-serif;padding:20px;white-space:pre-wrap;line-height:1.7}</style></head><body>' +
+    el.value.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</body></html>');
+  w.document.close();
+  setTimeout(function () { w.print(); }, 300);
+};
+
+Pages.planForm = async function () {
+  if (!Auth.isAdmin()) return toast('فقط مدیر', 'error');
+  try {
+    const products = await DB.getAll('products');
+    const today = todayJalali();
+    const opts = products.filter(function (pr) { return pr.active !== false; }).map(function (pr) {
+      return '<option value="' + String(pr.name).replace(/"/g, '&quot;') + '">' + pr.name + '</option>';
+    }).join('');
+    showModal(
+      '<div class="modal max-w-md"><h3 class="text-lg font-bold mb-4">هدف تولید روزانه</h3>' +
+      '<form id="plan-form" class="space-y-3">' +
+      '<div><label class="text-xs text-slate-400">تاریخ</label><input name="day" class="input-field" value="' + today + '" required /></div>' +
+      '<div><label class="text-xs text-slate-400">محصول</label><select name="product_name" class="input-field" required><option value="">انتخاب</option>' + opts + '</select></div>' +
+      '<div><label class="text-xs text-slate-400">تعداد هدف</label><input name="target_qty" type="number" step="0.01" class="input-field" required /></div>' +
+      '<div><label class="text-xs text-slate-400">یادداشت</label><input name="notes" class="input-field" /></div>' +
+      '<div class="flex gap-2"><button type="submit" class="btn-primary flex-1">ذخیره</button>' +
+      '<button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button></div></form></div>'
+    );
+    document.getElementById('plan-form').onsubmit = async function (ev) {
+      ev.preventDefault();
+      try {
+        const data = Object.fromEntries(new FormData(ev.target).entries());
+        data.target_qty = Number(data.target_qty);
+        await DB.add('daily_plans', data);
+        toast('هدف ذخیره شد', 'success');
+        closeModal();
+        navigate('dashboard');
+      } catch (err) {
+        toast(err.message || 'خطا', 'error');
+      }
+    };
+  } catch (e) {
+    toast(e.message || 'خطا', 'error');
   }
 };
 
