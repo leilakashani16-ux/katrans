@@ -1,10 +1,19 @@
-# گردش مواد کترینگ v3
+# غذای انصار — سیستم گردش مواد اولیه و تولید
 
 Workers + Static Assets + D1
 
-ساختار:
-- `public/` — فرانت (HTML/JS/icons)
+## ساختار
+- `public/` — فرانت (HTML/JS/icons/لوگو)
 - `src/index.js` — Worker (API + سرو فایل‌ها)
-- `wrangler.toml` — شامل `[assets] directory = "./public"`
+- `wrangler.toml` — Assets + D1 binding
 
-ببین DEPLOY.md
+ببین `DEPLOY.md`
+
+## ورود اولیه
+admin / admin123
+
+## نکات مهم
+- داده موجود در D1 پاک نمی‌شود. seed فقط وقتی جدول خالی است اجرا می‌شود.
+- مواد M009/M010 و پرسنل S012 در صورت نبودن، اضافه می‌شوند.
+- Service Worker API را کش نمی‌کند (ورود در اپ نصب‌شده درست کار می‌کند).
+- همگام‌سازی چند دستگاه: هر ۲۰ ثانیه در حالت ابری.

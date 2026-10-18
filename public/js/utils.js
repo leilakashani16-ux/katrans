@@ -55,7 +55,7 @@ function printReceipt(p) {
   </style>
 </head>
 <body>
-  <h2>فیش تولید کترینگ</h2>
+  <h2>فیش تولید — غذای انصار</h2>
   <table>
     <tr><td class="label">تاریخ</td><td class="val">${p.date || '—'}</td></tr>
     <tr><td class="label">محصول</td><td class="val">${p.product_name || '—'}</td></tr>

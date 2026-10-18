@@ -1,8 +1,10 @@
-const CACHE = 'kitchen-v4';
+const CACHE = 'ansar-v1';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './logo-ansar.png',
+  './bg-ansar.jpg',
   './js/db.js',
   './js/api.js',
   './js/auth.js',
@@ -36,11 +38,8 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
 
   const url = new URL(e.request.url);
-
-  // فقط same-origin
   if (url.origin !== self.location.origin) return;
 
-  // ===== مهم: API را هرگز کش نکن — همیشه از شبکه =====
   if (url.pathname.startsWith('/api')) {
     e.respondWith(
       fetch(e.request).catch(() =>
@@ -53,7 +52,6 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // فایل‌های استاتیک: شبکه اول، در صورت قطع بودن از کش
   e.respondWith(
     fetch(e.request)
       .then(res => {

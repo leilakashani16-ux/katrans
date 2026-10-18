@@ -179,6 +179,34 @@ async function checkStockAlertsAndNotify() {
   } catch (e) { console.warn('notify', e); }
 }
 
+
+/* ---------- همگام‌سازی بین دستگاه‌ها (polling) ---------- */
+function isModalOpen() {
+  const root = document.getElementById('modal-root');
+  return root && root.innerHTML.trim().length > 0;
+}
+
+async function softRefreshIfNeeded() {
+  if (!window.__cloudMode) return;
+  if (document.visibilityState !== 'visible') return;
+  if (isModalOpen()) return;
+  if (!Auth.currentUser) return;
+  try {
+    await navigate(currentPage);
+  } catch (e) {
+    console.warn('sync refresh failed', e);
+  }
+}
+
+function startCloudSync() {
+  if (window.__syncStarted) return;
+  window.__syncStarted = true;
+  setInterval(() => softRefreshIfNeeded(), 20000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') softRefreshIfNeeded();
+  });
+}
+
 function showApp() {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
@@ -188,6 +216,7 @@ function showApp() {
     (u.role === 'admin' ? 'مدیر سیستم' : u.role === 'entry' ? 'ثبت‌کننده ورود' : 'ثبت‌کننده تولید') + ' · ' + mode;
   document.getElementById('user-name-label').textContent = u.full_name || u.username;
   navigate('dashboard');
+  if (window.__cloudMode) startCloudSync();
   if (!sessionStorage.getItem('stock_notified')) {
     checkStockAlertsAndNotify().then(() => sessionStorage.setItem('stock_notified', '1'));
   }

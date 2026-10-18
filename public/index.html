@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
-  <meta name="theme-color" content="#0b1220" />
-  <meta name="description" content="سیستم گردش مواد اولیه و تولید کترینگ" />
+  <meta name="theme-color" content="#0d4d2e" />
+  <meta name="description" content="سیستم گردش مواد اولیه و تولید — غذای انصار" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="گردش مواد" />
+  <meta name="apple-mobile-web-app-title" content="غذای انصار" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-192.png" />
-  <title>سیستم گردش مواد اولیه و تولید کترینگ</title>
+  <title>غذای انصار — سیستم گردش مواد</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -29,10 +29,11 @@
           fontFamily: { sans: ['Vazirmatn', 'system-ui', 'sans-serif'] },
           colors: {
             brand: {
-              50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7',
-              400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857',
-              800: '#065f46', 900: '#064e3b'
+              50: '#ecfdf3', 100: '#d1fae0', 200: '#a7f3c5', 300: '#6ee7a8',
+              400: '#34d389', 500: '#1a9b55', 600: '#0d7a42', 700: '#0d4d2e',
+              800: '#0a3d24', 900: '#072e1b'
             },
+            cream: { 100: '#f7f3e8', 200: '#ebe4d0', 300: '#d4c9a8' },
             accent: { 400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed' },
             slate: { 850: '#141c2b', 950: '#070b14' }
           }
@@ -44,12 +45,12 @@
     * { font-family: 'Vazirmatn', system-ui, sans-serif; box-sizing: border-box; }
     body {
       min-height: 100vh;
-      background: #070b14;
+      background: #071a10;
       background-image:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(16,185,129,0.18), transparent 50%),
-        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(139,92,246,0.12), transparent 45%),
-        radial-gradient(ellipse 50% 30% at 50% 100%, rgba(6,182,212,0.08), transparent 40%),
-        linear-gradient(180deg, #070b14 0%, #0c1222 100%);
+        linear-gradient(180deg, rgba(7,26,16,0.90) 0%, rgba(10,40,24,0.92) 50%, rgba(7,26,16,0.95) 100%),
+        url('bg-ansar.jpg');
+      background-size: cover;
+      background-position: center;
       background-attachment: fixed;
     }
     body::before {
@@ -93,9 +94,9 @@
 
     .btn-primary {
       padding: 0.7rem 1.35rem; border-radius: 0.85rem; font-weight: 600;
-      background: linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%);
+      background: linear-gradient(135deg, #0d4d2e 0%, #1a9b55 50%, #34d389 100%);
       color: white; border: none; cursor: pointer;
-      box-shadow: 0 4px 20px rgba(16,185,129,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+      box-shadow: 0 4px 20px rgba(13, 77, 46, 0.45), inset 0 1px 0 rgba(255,255,255,0.12);
       transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
     }
     .btn-primary:hover { filter: brightness(1.08); box-shadow: 0 6px 28px rgba(16,185,129,0.45); }
@@ -228,9 +229,9 @@
   <div id="login-screen" class="min-h-screen flex items-center justify-center p-4">
     <div class="glass rounded-3xl p-8 w-full max-w-md shadow-2xl fade-in">
       <div class="text-center mb-8">
-        <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-400 via-brand-500 to-teal-600 flex items-center justify-center text-3xl logo-glow">🍽️</div>
-        <h1 class="text-2xl font-bold text-white tracking-tight">سیستم گردش مواد اولیه</h1>
-        <p class="text-slate-400 mt-1.5 text-sm">کترینگ • مدیریت تولید و موجودی ابری</p>
+        <img src="logo-ansar.png" alt="غذای انصار" class="w-28 h-auto mx-auto mb-4 rounded-2xl shadow-lg border border-brand-700/40" />
+        <h1 class="text-2xl font-bold text-cream-100 tracking-tight">غذای انصار</h1>
+        <p class="text-brand-300 mt-1.5 text-sm">سیستم گردش مواد اولیه و تولید</p>
       </div>
       <form id="login-form" class="space-y-4">
         <div>
@@ -254,10 +255,10 @@
     <aside id="sidebar" class="w-64 glass border-l border-slate-700/40 flex flex-col fixed right-0 top-0 bottom-0 z-40">
       <div class="p-5 border-b border-slate-700/40">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-lg">🍽️</div>
+          <img src="logo-ansar.png" alt="غذای انصار" class="w-10 h-10 rounded-xl object-cover border border-brand-600/40" />
           <div>
-            <div class="font-bold text-sm">گردش مواد</div>
-            <div class="text-xs text-slate-400" id="user-role-label">—</div>
+            <div class="font-bold text-sm text-cream-100">غذای انصار</div>
+            <div class="text-xs text-brand-400" id="user-role-label">—</div>
           </div>
         </div>
       </div>
@@ -280,7 +281,7 @@
     <div class="glass rounded-2xl p-4 flex items-center gap-3 shadow-2xl max-w-lg mx-auto border border-brand-500/30">
       <img src="icons/icon-96.png" alt="" class="w-12 h-12 rounded-xl flex-shrink-0" />
       <div class="flex-1 min-w-0">
-        <div class="font-bold text-sm">نصب اپلیکیشن</div>
+        <div class="font-bold text-sm">نصب غذای انصار</div>
         <div class="text-xs text-slate-400">روی صفحه اصلی گوشی نصب کنید</div>
       </div>
       <button id="install-btn" class="btn-primary text-sm whitespace-nowrap">نصب</button>

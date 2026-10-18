@@ -298,6 +298,29 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
 db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,material_name,shift_code,start_time,end_time,duration_minutes,producer_name,remainder_count,remainder_weight,remainder_type,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('1405/07/20','گوشت خورشت قورمه',8.0,8.0,'گوشت خورشتی','','','',null,'میثم خواجه',0,0,'حمل به روز بعد','')
     ]);
   }
+  // مواد/پرسنل تکمیلی از اکسل — فقط اگر کد موجود نباشد (داده قبلی پاک نمی‌شود)
+  const extraMats = [
+    ['M009', 'برنج هاشمی', 'کیلوگرم', 70, 20, ''],
+    ['M010', 'برنج ندا', 'کیلوگرم', 77, 20, ''],
+  ];
+  for (const m of extraMats) {
+    const ex = await db.prepare('SELECT id FROM materials WHERE code = ?').bind(m[0]).first();
+    if (!ex) {
+      await db.prepare(
+        'INSERT INTO materials (code,name,unit,initial_stock,min_alert,description,active) VALUES (?,?,?,?,?,?,1)'
+      ).bind(m[0], m[1], m[2], m[3], m[4], m[5]).run();
+    }
+  }
+  const extraStaff = [
+    ['S012', 'علی زبانگیر', 'کارگر', 1],
+  ];
+  for (const s of extraStaff) {
+    const ex = await db.prepare('SELECT id FROM personnel WHERE code = ?').bind(s[0]).first();
+    if (!ex) {
+      await db.prepare('INSERT INTO personnel (code,name,position,active) VALUES (?,?,?,?)').bind(s[0], s[1], s[2], s[3]).run();
+    }
+  }
+
 }
 
 async function handleApi(request, env) {
