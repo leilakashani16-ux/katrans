@@ -321,6 +321,19 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     }
   }
 
+  // تضمین ورود admin با admin123 (فقط رمز ادمین؛ بقیه داده دست نخورده می‌ماند)
+  {
+    const hAdmin = await hashPassword('admin123');
+    const adm = await db.prepare('SELECT id FROM users WHERE username = ?').bind('admin').first();
+    if (adm) {
+      await db.prepare('UPDATE users SET password_hash = ?, active = 1 WHERE username = ?').bind(hAdmin, 'admin').run();
+    } else {
+      await db.prepare(
+        'INSERT INTO users (username, password_hash, role, full_name, active) VALUES (?, ?, ?, ?, 1)'
+      ).bind('admin', hAdmin, 'admin', 'مدیر سیستم').run();
+    }
+  }
+
 }
 
 async function handleApi(request, env) {
