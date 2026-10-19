@@ -929,7 +929,10 @@ Pages.materials = async function () {
         <h1 class="text-2xl font-bold">مواد اولیه</h1>
         <p class="text-slate-400 text-sm">لیست و موجودی لحظه‌ای</p>
       </div>
-      ${canEdit ? `<button class="btn-primary" onclick="Pages.showMaterialForm()">+ افزودن ماده</button>` : ''}
+      <div class="flex gap-2 flex-wrap">
+        <button class="btn-secondary" onclick="Pages.materialPeriodForm()">📦 گزارش بازه</button>
+        ${canEdit ? `<button class="btn-primary" onclick="Pages.showMaterialForm()">+ افزودن ماده</button>` : ''}
+      </div>
     </div>
     <div class="glass-card rounded-2xl p-4">
       <div class="table-wrap">
@@ -1227,6 +1230,7 @@ Pages.reports = async function () {
         <button class="btn-secondary w-full" onclick="Pages.exportWastes()">📥 گزارش ضایعات</button>
         <button class="btn-secondary w-full" onclick="Pages.exportStock()">📥 گزارش موجودی تفصیلی</button>
         <button class="btn-secondary w-full" onclick="Pages.staffReportPrompt()">👤 گزارش کار یک پرسنل</button>
+        <button class="btn-primary w-full" onclick="Pages.materialPeriodForm()">📦 گزارش بازه ماده (ورود تا اتمام)</button>
       </div>
       <div class="glass-card rounded-2xl p-6 space-y-3">
         <h2 class="font-semibold">گزارش‌های PDF</h2>
@@ -1270,6 +1274,266 @@ Pages.reports = async function () {
       </div>
     </div>
   `;
+};
+
+/* ========== گزارش بازه ماده (از ورود تا اتمام) ========== */
+Pages.materialPeriodForm = async function () {
+  try {
+    const materials = await DB.getAll('materials');
+    const active = (materials || []).filter(m => m.active !== false && m.active !== 0);
+    const today = todayJalali();
+    const opts = active.map(m =>
+      `<option value="${String(m.name).replace(/"/g, '&quot;')}">${m.name} (${m.unit || ''})</option>`
+    ).join('');
+    showModal(`
+      <div class="modal max-w-md">
+        <h3 class="text-lg font-bold mb-2">📦 گزارش بازه ماده</h3>
+        <p class="text-xs text-slate-400 mb-4">از تاریخ ورود تا تاریخ اتمام موجودی — ورود، ضایعات، مصرف تولید و ضریب</p>
+        <form id="mat-period-form" class="space-y-3">
+          <div>
+            <label class="text-xs text-slate-400">ماده اولیه</label>
+            <select name="material_name" class="input-field" required>
+              <option value="">انتخاب کنید</option>
+              ${opts}
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="text-xs text-slate-400">از تاریخ</label>${jalaliInput('df', today)}</div>
+            <div><label class="text-xs text-slate-400">تا تاریخ</label>${jalaliInput('dt', today)}</div>
+          </div>
+          <p class="text-[10px] text-slate-500">مثال: ورود ۶۰ کیلو سینه → از تاریخ ورود تا روزی که موجودی تموم شد</p>
+          <div class="flex gap-2 pt-1">
+            <button type="submit" class="btn-primary flex-1">محاسبه گزارش</button>
+            <button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button>
+          </div>
+        </form>
+      </div>
+    `);
+    document.getElementById('mat-period-form').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const material = String(fd.get('material_name') || '').trim();
+      const df = String(fd.get('df') || '').trim();
+      const dt = String(fd.get('dt') || '').trim();
+      if (!material) return toast('ماده را انتخاب کنید', 'error');
+      closeModal();
+      await Pages.materialPeriodReport(material, df, dt);
+    };
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا', 'error');
+  }
+};
+
+Pages.materialPeriodReport = async function (material, df, dt) {
+  try {
+    const [entries, wastes, productions, returns, materials, products] = await Promise.all([
+      DB.getAll('entries'),
+      DB.getAll('wastes'),
+      DB.getAll('productions'),
+      DB.getAll('returns'),
+      DB.getAll('materials'),
+      DB.getAll('products'),
+    ]);
+    const mat = (materials || []).find(m => m.name === material);
+    const unit = (mat && mat.unit) ? mat.unit : 'کیلوگرم';
+
+    const inRange = (date) => {
+      if (!date) return false;
+      if (df && jalaliCompare(date, df) < 0) return false;
+      if (dt && jalaliCompare(date, dt) > 0) return false;
+      return true;
+    };
+
+    const eR = (entries || []).filter(e => e.material_name === material && inRange(e.date));
+    const wR = (wastes || []).filter(w => w.material_name === material && inRange(w.date));
+    const pR = (productions || []).filter(p => p.material_name === material && inRange(p.date));
+    const rR = (returns || []).filter(r => r.material_name === material && inRange(r.date));
+
+    const totalIn = eR.reduce((s, e) => s + Number(e.quantity || 0), 0);
+    const totalWaste = wR.reduce((s, w) => s + Number(w.quantity || 0), 0);
+    const totalOut = pR.reduce((s, p) => s + Number(p.material_weight || 0), 0);
+    const totalReturn = rR.reduce((s, r) => s + Number(r.return_weight || 0), 0);
+    const usable = totalIn - totalWaste + totalReturn;
+    const remaining = usable - totalOut;
+    const wastePct = totalIn > 0 ? Math.round((totalWaste / totalIn) * 1000) / 10 : 0;
+    const yieldPct = totalIn > 0 ? Math.round((totalOut / totalIn) * 1000) / 10 : 0;
+
+    // per product breakdown
+    const byProd = {};
+    pR.forEach(p => {
+      const name = p.product_name || 'نامشخص';
+      if (!byProd[name]) byProd[name] = { qty: 0, weight: 0, n: 0 };
+      byProd[name].qty += Number(p.quantity || 0);
+      byProd[name].weight += Number(p.material_weight || 0);
+      byProd[name].n += 1;
+    });
+    const prodRows = Object.entries(byProd).map(([name, v]) => {
+      const def = (products || []).find(x => x.name === name);
+      const expected = def && def.weight_per_unit ? Number(def.weight_per_unit) / 1000 : null;
+      const actual = v.qty > 0 ? v.weight / v.qty : 0;
+      return {
+        name,
+        qty: v.qty,
+        weight: Math.round(v.weight * 1000) / 1000,
+        actual: Math.round(actual * 1000) / 1000,
+        expected,
+        n: v.n,
+      };
+    }).sort((a, b) => b.weight - a.weight);
+
+    let company = 'غذای انصار';
+    try {
+      const local = localStorage.getItem('kitchen_settings');
+      if (local) company = JSON.parse(local).company_name || company;
+    } catch (_) {}
+
+    const statusColor = remaining <= 0.05 ? 'text-brand-300' : remaining < 0 ? 'text-red-400' : 'text-amber-300';
+    const statusText = remaining <= 0.05 && remaining >= -0.05 ? 'تقریباً تمام شده ✓' : remaining < 0 ? 'مصرف بیشتر از موجودی ⚠️' : 'هنوز مانده دارد';
+
+    const html = `
+      <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold">📦 گزارش بازه — ${material}</h1>
+          <p class="text-slate-400 text-sm">از ${df || '—'} تا ${dt || '—'} · واحد: ${unit}</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn-primary text-sm" onclick="Pages.materialPeriodWhatsApp()">📱 کپی واتساپ</button>
+          <button class="btn-secondary text-sm" onclick="Pages.materialPeriodForm()">بازه جدید</button>
+          <button class="btn-ghost text-sm" onclick="navigate('reports')">بازگشت</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="stat-card"><div class="text-xs text-slate-400">ورود</div><div class="text-xl font-bold text-brand-300">${fmtNum(totalIn)}</div></div>
+        <div class="stat-card"><div class="text-xs text-slate-400">ضایعات</div><div class="text-xl font-bold text-amber-300">${fmtNum(totalWaste)}</div><div class="text-[10px] text-slate-500">${wastePct}٪</div></div>
+        <div class="stat-card"><div class="text-xs text-slate-400">قابل‌مصرف</div><div class="text-xl font-bold text-cyan-300">${fmtNum(usable)}</div></div>
+        <div class="stat-card"><div class="text-xs text-slate-400">مصرف تولید</div><div class="text-xl font-bold text-violet-300">${fmtNum(totalOut)}</div><div class="text-[10px] text-slate-500">بازده ${yieldPct}٪</div></div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-4 mb-4">
+        <div class="flex flex-wrap justify-between gap-2 text-sm">
+          <span>برگشت به مواد: <strong class="text-cyan-300">${fmtNum(totalReturn)}</strong></span>
+          <span>مانده بازه: <strong class="${statusColor}">${fmtNum(remaining)}</strong> <span class="text-xs ${statusColor}">${statusText}</span></span>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-4 mb-4">
+        <h2 class="font-semibold mb-3">محصولات ساخته‌شده از این ماده در بازه</h2>
+        ${prodRows.length ? `
+          <div class="table-wrap">
+            <table class="data text-sm">
+              <thead><tr><th>محصول</th><th>تعداد</th><th>وزن ماده</th><th>ضریب واقعی</th><th>تعریف</th><th>رکورد</th></tr></thead>
+              <tbody>
+                ${prodRows.map(r => `
+                  <tr>
+                    <td class="font-medium">${r.name}</td>
+                    <td>${fmtNum(r.qty)}</td>
+                    <td class="text-cyan-300">${fmtNum(r.weight)}</td>
+                    <td class="font-bold">${fmtNum(r.actual)}</td>
+                    <td class="text-slate-400">${r.expected != null ? fmtNum(r.expected) : '—'}</td>
+                    <td class="text-slate-500">${r.n}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        ` : `<p class="text-slate-500 text-sm">در این بازه تولیدی از این ماده ثبت نشده</p>`}
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="glass-card rounded-2xl p-4">
+          <h2 class="font-semibold mb-2 text-sm">ورودها (${eR.length})</h2>
+          <div class="table-wrap max-h-40 overflow-y-auto">
+            <table class="data text-xs">
+              <thead><tr><th>تاریخ</th><th>مقدار</th><th>تأمین‌کننده</th></tr></thead>
+              <tbody>
+                ${eR.length ? eR.map(e => `<tr><td>${e.date}</td><td class="text-brand-300">${fmtNum(e.quantity)}</td><td>${e.supplier || '—'}</td></tr>`).join('') : '<tr><td colspan="3" class="text-slate-500">—</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="glass-card rounded-2xl p-4">
+          <h2 class="font-semibold mb-2 text-sm">ضایعات (${wR.length})</h2>
+          <div class="table-wrap max-h-40 overflow-y-auto">
+            <table class="data text-xs">
+              <thead><tr><th>تاریخ</th><th>نوع</th><th>مقدار</th></tr></thead>
+              <tbody>
+                ${wR.length ? wR.map(w => `<tr><td>${w.date}</td><td>${w.waste_type || '—'}</td><td class="text-amber-300">${fmtNum(w.quantity)}</td></tr>`).join('') : '<tr><td colspan="3" class="text-slate-500">—</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // stash for WhatsApp
+    window.__matPeriodReport = {
+      company, material, unit, df, dt,
+      totalIn, totalWaste, usable, totalOut, totalReturn, remaining,
+      wastePct, yieldPct, statusText, prodRows, eR, wR,
+    };
+
+    const content = document.getElementById('page-content');
+    if (content) {
+      content.innerHTML = html;
+      content.classList.remove('fade-in');
+      void content.offsetWidth;
+      content.classList.add('fade-in');
+    }
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا در گزارش', 'error');
+  }
+};
+
+Pages.materialPeriodWhatsApp = function () {
+  const r = window.__matPeriodReport;
+  if (!r) return toast('اول گزارش را محاسبه کنید', 'error');
+  const lines = [
+    '📦 گزارش بازه ماده — ' + r.company,
+    'ماده: ' + r.material + ' (' + r.unit + ')',
+    'از ' + (r.df || '—') + ' تا ' + (r.dt || '—'),
+    '══════════════════',
+    'ورود:       ' + r.totalIn,
+    'ضایعات:     ' + r.totalWaste + ' (' + r.wastePct + '٪)',
+    'قابل‌مصرف:  ' + r.usable,
+    'مصرف تولید: ' + r.totalOut + ' (بازده ' + r.yieldPct + '٪)',
+    'برگشت:      ' + r.totalReturn,
+    'مانده بازه: ' + r.remaining + ' — ' + r.statusText,
+    '──────────────────',
+    'محصولات از این ماده:',
+  ];
+  if (r.prodRows && r.prodRows.length) {
+    r.prodRows.forEach(p => {
+      lines.push('• ' + p.name + ': ' + p.qty + ' عدد · ' + p.weight + ' ' + r.unit +
+        ' (ضریب ' + p.actual + (p.expected != null ? ' / تعریف ' + p.expected : '') + ')');
+    });
+  } else {
+    lines.push('• تولیدی ثبت نشده');
+  }
+  lines.push('──────────────────');
+  lines.push('تهیه‌شده در ' + new Date().toLocaleString('fa-IR'));
+  const text = lines.join('\n');
+  showModal(
+    '<div class="modal max-w-lg"><h3 class="text-lg font-bold mb-2">📱 گزارش بازه برای واتساپ</h3>' +
+    '<textarea id="mat-period-wa" class="input-field font-mono text-xs h-64" readonly></textarea>' +
+    '<div class="flex gap-2 mt-3">' +
+    '<button type="button" class="btn-primary flex-1" id="btn-copy-mat-period">کپی متن</button>' +
+    '<button type="button" class="btn-ghost" onclick="closeModal()">بستن</button></div></div>'
+  );
+  const ta = document.getElementById('mat-period-wa');
+  if (ta) ta.value = text;
+  const btn = document.getElementById('btn-copy-mat-period');
+  if (btn) btn.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('کپی شد', 'success');
+    } catch (_) {
+      if (ta) ta.select();
+      toast('دستی کپی کنید', 'info');
+    }
+  };
 };
 
 Pages.exportStock = async function () {
