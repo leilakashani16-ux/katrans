@@ -449,6 +449,7 @@ Pages.entries = async function () {
       </div>
       <div class="flex gap-2 flex-wrap">
         ${canAdd ? `<button class="btn-primary" onclick="Pages.showEntryForm()">+ ثبت ورود جدید</button>` : ''}
+        ${canEdit ? `<button class="btn-secondary" onclick="Pages.dedupeEntries()">🧹 پاک‌سازی تکراری‌ها</button>` : ''}
         <button class="btn-secondary" onclick="Pages.exportEntries()">خروجی اکسل</button>
         <button class="btn-secondary" onclick="Pages.pdfEntries()">خروجی PDF</button>
       </div>
@@ -566,6 +567,72 @@ Pages.deleteEntry = async function (id) {
   await DB.remove('entries', id);
   toast('حذف شد', 'success');
   navigate('entries');
+};
+
+/** پاک‌سازی ورودهای تکراری: کلید = تاریخ + ماده + مقدار (+ فاکتور اگر باشد) */
+Pages.dedupeEntries = async function () {
+  if (!Auth.canEditDelete()) return toast('فقط مدیر', 'error');
+  try {
+    const entries = await DB.getAll('entries');
+    if (!entries || entries.length < 2) {
+      toast('رکوردی برای مقایسه نیست', 'info');
+      return;
+    }
+    // group by composite key
+    const groups = {};
+    entries.forEach(e => {
+      const qty = Number(e.quantity);
+      const key = [
+        String(e.date || '').trim(),
+        String(e.material_name || '').trim(),
+        String(isNaN(qty) ? e.quantity : qty),
+        String(e.invoice_no || '').trim(),
+      ].join('||');
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(e);
+    });
+    const toRemove = [];
+    const samples = [];
+    Object.values(groups).forEach(list => {
+      if (list.length < 2) return;
+      // keep lowest id (oldest), remove the rest
+      list.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+      const keep = list[0];
+      const dups = list.slice(1);
+      dups.forEach(d => toRemove.push(d));
+      samples.push(keep.date + ' · ' + keep.material_name + ' · ' + keep.quantity + ' (×' + list.length + ')');
+    });
+    if (!toRemove.length) {
+      toast('تکراری پیدا نشد ✓', 'success');
+      return;
+    }
+    const preview = samples.slice(0, 8).join('\n') + (samples.length > 8 ? '\n…' : '');
+    if (!confirmAction(
+      toRemove.length + ' رکورد تکراری پیدا شد.\n' +
+      'از هر گروه قدیمی‌ترین نگه داشته می‌شود.\n\n' +
+      preview + '\n\nادامه برای حذف نرم تکراری‌ها؟'
+    )) return;
+
+    let ok = 0;
+    let fail = 0;
+    for (const d of toRemove) {
+      try {
+        await DB.remove('entries', d.id);
+        ok++;
+      } catch (err) {
+        console.error('dedupe remove', d.id, err);
+        fail++;
+      }
+    }
+    toast(
+      'پاک‌سازی: ' + ok + ' حذف شد' + (fail ? ' · ' + fail + ' خطا' : ''),
+      fail ? 'error' : 'success'
+    );
+    navigate('entries');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا در پاک‌سازی', 'error');
+  }
 };
 
 Pages.exportEntries = async function () {
