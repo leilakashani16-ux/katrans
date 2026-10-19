@@ -263,8 +263,9 @@ Pages.dashboard = async function () {
       <div class="glass-card rounded-2xl p-5">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 class="font-semibold">🏆 افتخار و نمره شیفت امروز</h2>
-          <div class="flex gap-2">
+          <div class="flex gap-2 flex-wrap">
             ${Auth.isAdmin() ? `<button class="btn-secondary text-xs" onclick="Pages.scoreStaffForm()">نمره‌دهی</button>` : ''}
+            <button class="btn-ghost text-xs" onclick="navigate('league')">جدول لیگ</button>
             <button class="btn-ghost text-xs" onclick="Pages.shiftSummary()">خلاصه واتساپ</button>
           </div>
         </div>
@@ -1819,10 +1820,28 @@ Pages.shiftSummary = async function () {
     try { scoreRows = ((await DB.getAll('staff_scores')) || []).filter(s => s.day === today); } catch (e) {}
     scoreRows.sort((a, b) => Number(b.score) - Number(a.score));
     const scoreLines = scoreRows.length
-      ? scoreRows.map(s => '⭐ ' + s.personnel_name + ': ' + s.score + '/10' + (s.note ? (' — ' + s.note) : ''))
+      ? scoreRows.map((s, i) => {
+          const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.';
+          return medal + ' ' + s.personnel_name + ': ' + s.score + '/10' + (s.note ? (' — ' + s.note) : '');
+        })
       : ['هنوز نمره‌ای ثبت نشده'];
+    // league 30-day snippet for motivation
+    let allScores = [];
+    try { allScores = (await DB.getAll('staff_scores')) || []; } catch (e) {}
+    const league30 = Pages._buildLeague(allScores, 30);
+    const leagueLines = league30.length
+      ? league30.slice(0, 8).map(r => {
+          const medal = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : (r.rank + '.');
+          return medal + ' ' + r.name + ' — ' + r.points + ' امتیاز (میانگین ' + r.avg + ')';
+        })
+      : ['هنوز جدولی تشکیل نشده'];
+    let company = 'غذای انصار';
+    try {
+      const local = localStorage.getItem('kitchen_settings');
+      if (local) company = JSON.parse(local).company_name || company;
+    } catch (_) {}
     const lines = [
-      '📋 خلاصه شیفت — غذای انصار',
+      '📋 خلاصه شیفت — ' + company,
       'تاریخ: ' + today,
       '——————————',
       'ورود مواد: ' + eT.length + ' رکورد',
@@ -1830,13 +1849,16 @@ Pages.shiftSummary = async function () {
       'ضایعات: ' + wT.length + ' رکورد · مقدار ' + sumWaste,
       top ? ('بیشترین تولید امروز: ' + top[0] + ' (' + top[1] + ')') : 'تولید ثبت نشده',
       '——————————',
-      '🏅 نمره کاری پرسنل امروز:',
+      '🏅 نمره کاری امروز:',
     ].concat(scoreLines).concat([
+      '——————————',
+      '🏆 جدول لیگ ۳۰ روزه:',
+    ]).concat(leagueLines).concat([
       '——————————',
       'مواد نیازمند توجه:',
     ]).concat(
       alerts.length ? alerts.map(m => '• ' + m.name + ': ' + m.current_stock + ' ' + (m.unit || '') + ' (' + m.status + ')') : ['• مورد بحرانی نیست'],
-      ['——————————', 'خسته نباشید 🌿', 'تهیه‌شده در ' + new Date().toLocaleString('fa-IR')]
+      ['——————————', 'رقابت سالم = کیفیت بالاتر 💪', 'خسته نباشید 🌿', 'تهیه‌شده در ' + new Date().toLocaleString('fa-IR')]
     );
     const text = lines.join('\n');
     const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -1913,6 +1935,262 @@ Pages.planForm = async function () {
 
 
 
+/* ========== LEAGUE TABLE (رتبه‌بندی رقابتی پرسنل) ========== */
+Pages._buildLeague = function (scores, periodDays) {
+  // periodDays: null = all time, number = last N calendar-ish days by jalali string
+  const today = todayJalali();
+  let filtered = scores || [];
+  if (periodDays && periodDays > 0) {
+    // keep scores where day is within approx window (string compare works same year)
+    const parts = today.split('/').map(Number);
+    let d = parts[2] - (periodDays - 1);
+    let m = parts[1];
+    let y = parts[0];
+    while (d < 1) { d += 30; m -= 1; if (m < 1) { m = 12; y -= 1; } }
+    const from = y + '/' + String(m).padStart(2, '0') + '/' + String(Math.max(1, d)).padStart(2, '0');
+    filtered = filtered.filter(s => s.day && jalaliCompare(s.day, from) >= 0 && jalaliCompare(s.day, today) <= 0);
+  }
+  // aggregate by person: total points, avg, days played, last score, form (last 5)
+  const map = {};
+  filtered.forEach(s => {
+    const name = s.personnel_name || 'نامشخص';
+    if (!map[name]) map[name] = { name, points: 0, count: 0, scores: [], lastDay: '', lastScore: 0 };
+    const sc = Number(s.score) || 0;
+    map[name].points += sc;
+    map[name].count += 1;
+    map[name].scores.push({ day: s.day, score: sc, note: s.note || '' });
+    if (!map[name].lastDay || jalaliCompare(s.day, map[name].lastDay) >= 0) {
+      map[name].lastDay = s.day;
+      map[name].lastScore = sc;
+    }
+  });
+  const rows = Object.values(map).map(r => {
+    r.avg = r.count ? Math.round((r.points / r.count) * 10) / 10 : 0;
+    // form: last 5 scores chronological
+    const sorted = r.scores.slice().sort((a, b) => jalaliCompare(a.day, b.day));
+    r.form = sorted.slice(-5).map(x => x.score);
+    return r;
+  });
+  // sort: points desc, then avg desc, then count desc
+  rows.sort((a, b) => b.points - a.points || b.avg - a.avg || b.count - a.count);
+  rows.forEach((r, i) => { r.rank = i + 1; });
+  return rows;
+};
+
+Pages._prevRankMap = function (scores, periodDays) {
+  // rank in previous equal-length window for movement arrows
+  if (!periodDays) return {};
+  const today = todayJalali();
+  const parts = today.split('/').map(Number);
+  // end of previous period = day before current window start
+  let d = parts[2] - periodDays;
+  let m = parts[1];
+  let y = parts[0];
+  while (d < 1) { d += 30; m -= 1; if (m < 1) { m = 12; y -= 1; } }
+  const prevEnd = y + '/' + String(m).padStart(2, '0') + '/' + String(Math.max(1, d)).padStart(2, '0');
+  let d2 = d - (periodDays - 1);
+  let m2 = m;
+  let y2 = y;
+  while (d2 < 1) { d2 += 30; m2 -= 1; if (m2 < 1) { m2 = 12; y2 -= 1; } }
+  const prevFrom = y2 + '/' + String(m2).padStart(2, '0') + '/' + String(Math.max(1, d2)).padStart(2, '0');
+  const prevScores = (scores || []).filter(s =>
+    s.day && jalaliCompare(s.day, prevFrom) >= 0 && jalaliCompare(s.day, prevEnd) <= 0
+  );
+  const prev = Pages._buildLeague(prevScores, null);
+  const map = {};
+  prev.forEach(r => { map[r.name] = r.rank; });
+  return map;
+};
+
+Pages.league = async function () {
+  let scores = [];
+  try { scores = (await DB.getAll('staff_scores')) || []; } catch (e) { scores = []; }
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const period = params.get('p') || '30'; // today | 7 | 30 | all
+  let periodDays = null;
+  let periodLabel = 'کل فصل';
+  if (period === 'today') { periodDays = 1; periodLabel = 'امروز'; }
+  else if (period === '7') { periodDays = 7; periodLabel = '۷ روز اخیر'; }
+  else if (period === '30') { periodDays = 30; periodLabel = '۳۰ روز اخیر'; }
+  else { periodDays = null; periodLabel = 'کل فصل'; }
+
+  const table = Pages._buildLeague(scores, periodDays);
+  const prevMap = periodDays ? Pages._prevRankMap(scores, periodDays) : {};
+
+  const medal = (rank) => {
+    if (rank === 1) return '🥇';
+    if (rank === 2) return '🥈';
+    if (rank === 3) return '🥉';
+    return rank;
+  };
+  const moveArrow = (name, rank) => {
+    if (!prevMap[name]) return '<span class="text-slate-600 text-xs">—</span>';
+    const diff = prevMap[name] - rank;
+    if (diff > 0) return `<span class="text-brand-400 text-xs font-bold">▲${diff}</span>`;
+    if (diff < 0) return `<span class="text-red-400 text-xs font-bold">▼${Math.abs(diff)}</span>`;
+    return `<span class="text-slate-500 text-xs">•</span>`;
+  };
+  const formDots = (form) => {
+    if (!form || !form.length) return '—';
+    return form.map(s => {
+      const c = s >= 8 ? 'text-brand-400' : s >= 5 ? 'text-amber-400' : 'text-red-400';
+      return `<span class="${c} font-bold">${s}</span>`;
+    }).join(' ');
+  };
+
+  return `
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold">🏆 جدول لیگ پرسنل</h1>
+        <p class="text-slate-400 text-sm">رتبه‌بندی رقابتی بر اساس نمرات کاری · ${periodLabel}</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        ${Auth.isAdmin() ? `<button class="btn-primary text-sm" onclick="Pages.scoreStaffForm()">+ ثبت نمره</button>` : ''}
+        <button class="btn-secondary text-sm" onclick="Pages.leagueWhatsApp('${period}')">📱 خروجی واتساپ</button>
+      </div>
+    </div>
+
+    <div class="filter-bar glass-card rounded-xl p-2 mb-4 flex flex-wrap gap-2">
+      <button class="btn-ghost text-sm ${period==='today'?'text-brand-300':''}" onclick="location.hash='league?p=today'; navigate('league')">امروز</button>
+      <button class="btn-ghost text-sm ${period==='7'?'text-brand-300':''}" onclick="location.hash='league?p=7'; navigate('league')">۷ روز</button>
+      <button class="btn-ghost text-sm ${period==='30'?'text-brand-300':''}" onclick="location.hash='league?p=30'; navigate('league')">۳۰ روز</button>
+      <button class="btn-ghost text-sm ${period==='all'?'text-brand-300':''}" onclick="location.hash='league?p=all'; navigate('league')">کل فصل</button>
+    </div>
+
+    <div class="glass-card rounded-2xl p-4 mb-4">
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th class="w-12">رتبه</th>
+              <th></th>
+              <th>پرسنل</th>
+              <th>امتیاز</th>
+              <th>میانگین</th>
+              <th>تعداد نمره</th>
+              <th>فرم اخیر</th>
+              <th>آخرین</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${table.length ? table.map(r => `
+              <tr class="${r.rank<=3 ? 'bg-brand-500/5' : ''}">
+                <td class="font-bold text-lg">${medal(r.rank)}</td>
+                <td>${moveArrow(r.name, r.rank)}</td>
+                <td class="font-medium">${r.name}</td>
+                <td class="font-bold text-brand-300 text-lg">${fmtNum(r.points)}</td>
+                <td class="${r.avg>=8?'text-brand-300':r.avg>=5?'text-amber-300':'text-red-300'}">${fmtNum(r.avg)}</td>
+                <td class="text-slate-400">${r.count}</td>
+                <td class="text-xs tracking-wider">${formDots(r.form)}</td>
+                <td class="text-xs text-slate-400">${r.lastDay || '—'} · ${r.lastScore}/10</td>
+              </tr>
+            `).join('') : '<tr><td colspan="8" class="text-center text-slate-500 py-10">هنوز نمره‌ای ثبت نشده — از دکمه نمره‌دهی شروع کن</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-[10px] text-slate-500 mt-3">امتیاز = جمع نمرات روزانه · رتبه بر اساس امتیاز (سپس میانگین) · ▲▼ نسبت به دوره قبل</p>
+    </div>
+
+    ${table.length >= 1 ? `
+    <div class="grid sm:grid-cols-3 gap-4">
+      <div class="stat-card border border-amber-500/30">
+        <div class="text-xs text-amber-300">🥇 صدر جدول</div>
+        <div class="text-xl font-bold mt-1">${table[0].name}</div>
+        <div class="text-sm text-slate-400">${fmtNum(table[0].points)} امتیاز · میانگین ${fmtNum(table[0].avg)}</div>
+      </div>
+      ${table[1] ? `<div class="stat-card">
+        <div class="text-xs text-slate-400">🥈 دوم</div>
+        <div class="text-lg font-bold mt-1">${table[1].name}</div>
+        <div class="text-sm text-slate-400">${fmtNum(table[1].points)} امتیاز</div>
+      </div>` : ''}
+      ${table[2] ? `<div class="stat-card">
+        <div class="text-xs text-slate-400">🥉 سوم</div>
+        <div class="text-lg font-bold mt-1">${table[2].name}</div>
+        <div class="text-sm text-slate-400">${fmtNum(table[2].points)} امتیاز</div>
+      </div>` : ''}
+    </div>` : ''}
+  `;
+};
+
+Pages.leagueWhatsApp = async function (period) {
+  try {
+    let scores = [];
+    try { scores = (await DB.getAll('staff_scores')) || []; } catch (e) {}
+    period = period || '30';
+    let periodDays = null;
+    let periodLabel = 'کل فصل';
+    if (period === 'today') { periodDays = 1; periodLabel = 'امروز'; }
+    else if (period === '7') { periodDays = 7; periodLabel = '۷ روز اخیر'; }
+    else if (period === '30') { periodDays = 30; periodLabel = '۳۰ روز اخیر'; }
+
+    const table = Pages._buildLeague(scores, periodDays);
+    const prevMap = periodDays ? Pages._prevRankMap(scores, periodDays) : {};
+    const medal = (r) => r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : (r + '.');
+    const move = (name, rank) => {
+      if (!prevMap[name]) return '';
+      const d = prevMap[name] - rank;
+      if (d > 0) return ' ▲' + d;
+      if (d < 0) return ' ▼' + Math.abs(d);
+      return ' •';
+    };
+
+    let company = 'غذای انصار';
+    try {
+      const local = localStorage.getItem('kitchen_settings');
+      if (local) company = JSON.parse(local).company_name || company;
+    } catch (_) {}
+
+    const lines = [
+      '🏆 جدول لیگ پرسنل — ' + company,
+      'بازه: ' + periodLabel,
+      'تاریخ گزارش: ' + todayJalali(),
+      '══════════════════',
+    ];
+    if (!table.length) {
+      lines.push('هنوز نمره‌ای ثبت نشده');
+    } else {
+      table.forEach(r => {
+        lines.push(
+          medal(r.rank) + ' ' + r.name + move(r.name, r.rank) +
+          '\n   امتیاز: ' + r.points + ' | میانگین: ' + r.avg + ' | نمرات: ' + r.count +
+          (r.form && r.form.length ? (' | فرم: ' + r.form.join('-')) : '')
+        );
+      });
+      lines.push('══════════════════');
+      lines.push('🥇 قهرمان فعلی: ' + table[0].name + ' با ' + table[0].points + ' امتیاز');
+      if (table[1]) lines.push('🥈 ' + table[1].name + ' — ' + table[1].points);
+      if (table[2]) lines.push('🥉 ' + table[2].name + ' — ' + table[2].points);
+    }
+    lines.push('──────────────────');
+    lines.push('هر نمره روزانه روی رتبه اثر می‌گذارد 💪');
+    lines.push('خسته نباشید — رقابت سالم = کیفیت بالاتر 🌿');
+
+    const text = lines.join('\n');
+    showModal(
+      '<div class="modal max-w-lg"><h3 class="text-lg font-bold mb-2">📱 گزارش لیگ برای واتساپ</h3>' +
+      '<p class="text-xs text-slate-400 mb-3">کپی کن و تو گروه بذار</p>' +
+      '<textarea id="league-wa-text" class="input-field font-mono text-xs h-64" readonly></textarea>' +
+      '<div class="flex gap-2 mt-3">' +
+      '<button type="button" class="btn-primary flex-1" id="btn-copy-league">کپی متن</button>' +
+      '<button type="button" class="btn-ghost" onclick="closeModal()">بستن</button></div></div>'
+    );
+    const ta = document.getElementById('league-wa-text');
+    if (ta) ta.value = text;
+    document.getElementById('btn-copy-league').onclick = async function () {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('کپی شد — برو تو واتساپ پیست کن', 'success');
+      } catch (err) {
+        if (ta) ta.select();
+        toast('Ctrl+C / نگه دار و کپی', 'info');
+      }
+    };
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا', 'error');
+  }
+};
+
 Pages.scoreStaffForm = async function () {
   if (!Auth.isAdmin()) return toast('فقط مدیر می‌تواند نمره بدهد', 'error');
   try {
@@ -1946,9 +2224,10 @@ Pages.scoreStaffForm = async function () {
         if (data.score < 1 || data.score > 10) throw new Error('نمره باید بین ۱ و ۱۰ باشد');
         data.scored_by = (Auth.currentUser && (Auth.currentUser.full_name || Auth.currentUser.username)) || 'مدیر';
         await DB.add('staff_scores', data);
-        toast('نمره ثبت شد', 'success');
+        toast('نمره ثبت شد — جدول لیگ به‌روز شد 🏆', 'success');
         closeModal();
-        navigate('dashboard');
+        location.hash = 'league?p=30';
+        navigate('league');
       } catch (err) {
         toast(err.message || 'خطا', 'error');
       }
