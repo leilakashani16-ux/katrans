@@ -297,27 +297,6 @@ Pages.dashboard = async function () {
           </div>
         ` : (Auth.isAdmin() ? `<p class="text-xs text-slate-500">هنوز نمره‌ای ثبت نشده — دکمه نمره‌دهی</p>` : '')}
       </div>
-      <div class="glass-card rounded-2xl p-5">
-        <h2 class="font-semibold mb-3">⚗️ ضریب تبدیل ماده → محصول</h2>
-        <p class="text-xs text-slate-400 mb-3">میانگین مصرف واقعی به ازای هر واحد تولید</p>
-        ${conversions.length ? `
-          <div class="table-wrap max-h-56 overflow-y-auto">
-            <table class="data text-xs">
-              <thead><tr><th>محصول</th><th>مصرف/واحد</th><th>تعریف</th><th>نمونه</th></tr></thead>
-              <tbody>
-                ${conversions.map(c => `
-                  <tr>
-                    <td class="font-medium">${c.name}</td>
-                    <td class="text-cyan-300">${fmtNum(c.actual)}</td>
-                    <td class="text-slate-400">${c.expected != null ? fmtNum(c.expected) : '—'}</td>
-                    <td>${c.samples}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        ` : `<p class="text-slate-500 text-sm">با ثبت تولید محاسبه می‌شود</p>`}
-      </div>
     </div>
 
     <div class="glass-card rounded-2xl p-5 mb-8">
@@ -793,6 +772,7 @@ Pages.productions = async function () {
       </div>
       <div class="flex gap-2 flex-wrap">
         ${canAdd ? `<button class="btn-primary" onclick="Pages.showProdForm()">+ ثبت تولید</button>` : ''}
+        ${canEdit ? `<button class="btn-secondary" onclick="Pages.dedupeProductions()">🧹 پاک‌سازی تکراری‌ها</button>` : ''}
         <button class="btn-secondary" onclick="Pages.exportProds()">خروجی اکسل</button>
         <button class="btn-secondary" onclick="Pages.pdfProds()">PDF</button>
       </div>
@@ -962,6 +942,73 @@ Pages.deleteProd = async function (id) {
   await DB.remove('productions', id);
   toast('حذف شد', 'success');
   navigate('productions');
+};
+
+/** پاک‌سازی تولیدهای تکراری: تاریخ + محصول + تعداد + وزن ماده + تولیدکننده */
+Pages.dedupeProductions = async function () {
+  if (!Auth.canEditDelete()) return toast('فقط مدیر', 'error');
+  try {
+    const list = await DB.getAll('productions');
+    if (!list || list.length < 2) {
+      toast('رکوردی برای مقایسه نیست', 'info');
+      return;
+    }
+    const groups = {};
+    list.forEach(p => {
+      const qty = Number(p.quantity);
+      const w = Number(p.material_weight);
+      const key = [
+        String(p.date || '').trim(),
+        String(p.product_name || '').trim(),
+        String(isNaN(qty) ? p.quantity : qty),
+        String(isNaN(w) ? p.material_weight : w),
+        String(p.producer_name || '').trim(),
+        String(p.material_name || '').trim(),
+      ].join('||');
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(p);
+    });
+    const toRemove = [];
+    const samples = [];
+    Object.values(groups).forEach(g => {
+      if (g.length < 2) return;
+      g.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+      g.slice(1).forEach(d => toRemove.push(d));
+      const keep = g[0];
+      samples.push(keep.date + ' · ' + keep.product_name + ' · ' + keep.quantity + ' (×' + g.length + ')');
+    });
+    if (!toRemove.length) {
+      toast('تکراری پیدا نشد ✓', 'success');
+      return;
+    }
+    const preview = samples.slice(0, 8).join('\n') + (samples.length > 8 ? '\n…' : '');
+    if (!confirmAction(
+      toRemove.length + ' رکورد تولید تکراری پیدا شد.\n' +
+      'از هر گروه قدیمی‌ترین نگه داشته می‌شود.\n\n' +
+      preview + '\n\nادامه برای حذف نرم تکراری‌ها؟'
+    )) return;
+    let ok = 0, fail = 0;
+    for (const d of toRemove) {
+      try {
+        const returns = await DB.getAll('returns');
+        for (const r of returns) {
+          if (r.production_id === d.id) {
+            try { await DB.remove('returns', r.id); } catch (_) {}
+          }
+        }
+        await DB.remove('productions', d.id);
+        ok++;
+      } catch (err) {
+        console.error('dedupe prod', d.id, err);
+        fail++;
+      }
+    }
+    toast('پاک‌سازی تولید: ' + ok + ' حذف شد' + (fail ? ' · ' + fail + ' خطا' : ''), fail ? 'error' : 'success');
+    navigate('productions');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'خطا در پاک‌سازی', 'error');
+  }
 };
 
 Pages.exportProds = async function () {
@@ -1439,15 +1486,24 @@ Pages.materialPeriodReport = async function (material, df, dt) {
       const def = (products || []).find(x => x.name === name);
       const expected = def && def.weight_per_unit ? Number(def.weight_per_unit) / 1000 : null;
       const actual = v.qty > 0 ? v.weight / v.qty : 0;
+      const theoryW = expected != null ? expected * v.qty : null;
+      const diffW = theoryW != null ? Math.round((v.weight - theoryW) * 1000) / 1000 : null;
       return {
         name,
         qty: v.qty,
         weight: Math.round(v.weight * 1000) / 1000,
         actual: Math.round(actual * 1000) / 1000,
         expected,
+        theoryW: theoryW != null ? Math.round(theoryW * 1000) / 1000 : null,
+        diffW,
         n: v.n,
       };
     }).sort((a, b) => b.weight - a.weight);
+
+    // وزن تئوری کل محصولات در برابر وزن ثبت‌شده تولید
+    const theoryTotal = prodRows.reduce((s, r) => s + (r.theoryW != null ? r.theoryW : 0), 0);
+    const theoryDiff = Math.round((totalOut - theoryTotal) * 1000) / 1000; // مثبت = بیشتر از تعریف مصرف شده
+    const stockDiff = Math.round(remaining * 1000) / 1000; // قابل‌مصرف − مصرف تولید
 
     let company = 'غذای انصار';
     try {
@@ -1455,8 +1511,12 @@ Pages.materialPeriodReport = async function (material, df, dt) {
       if (local) company = JSON.parse(local).company_name || company;
     } catch (_) {}
 
-    const statusColor = remaining <= 0.05 ? 'text-brand-300' : remaining < 0 ? 'text-red-400' : 'text-amber-300';
+    const statusColor = remaining <= 0.05 && remaining >= -0.05 ? 'text-brand-300' : remaining < 0 ? 'text-red-400' : 'text-amber-300';
     const statusText = remaining <= 0.05 && remaining >= -0.05 ? 'تقریباً تمام شده ✓' : remaining < 0 ? 'مصرف بیشتر از موجودی ⚠️' : 'هنوز مانده دارد';
+    const theoryDiffColor = Math.abs(theoryDiff) < 0.05 ? 'text-brand-300' : theoryDiff > 0 ? 'text-red-400' : 'text-amber-300';
+    const theoryDiffText = Math.abs(theoryDiff) < 0.05
+      ? 'مطابق تعریف ✓'
+      : (theoryDiff > 0 ? 'بیشتر از تعریف مصرف شده ⚠️' : 'کمتر از تعریف ثبت شده');
 
     const html = `
       <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -1471,17 +1531,36 @@ Pages.materialPeriodReport = async function (material, df, dt) {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <div class="stat-card"><div class="text-xs text-slate-400">ورود</div><div class="text-xl font-bold text-brand-300">${fmtNum(totalIn)}</div></div>
         <div class="stat-card"><div class="text-xs text-slate-400">ضایعات</div><div class="text-xl font-bold text-amber-300">${fmtNum(totalWaste)}</div><div class="text-[10px] text-slate-500">${wastePct}٪</div></div>
-        <div class="stat-card"><div class="text-xs text-slate-400">قابل‌مصرف</div><div class="text-xl font-bold text-cyan-300">${fmtNum(usable)}</div></div>
-        <div class="stat-card"><div class="text-xs text-slate-400">مصرف تولید</div><div class="text-xl font-bold text-violet-300">${fmtNum(totalOut)}</div><div class="text-[10px] text-slate-500">بازده ${yieldPct}٪</div></div>
+        <div class="stat-card"><div class="text-xs text-slate-400">قابل‌مصرف</div><div class="text-xl font-bold text-cyan-300">${fmtNum(usable)}</div><div class="text-[10px] text-slate-500">ورود − ضایعات + برگشت</div></div>
+        <div class="stat-card"><div class="text-xs text-slate-400">مصرف تولید</div><div class="text-xl font-bold text-violet-300">${fmtNum(totalOut)}</div><div class="text-[10px] text-slate-500">وزن ثبت‌شده در تولید</div></div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-4 mb-4 border border-brand-500/20">
+        <h2 class="font-semibold mb-3">⚖️ اختلاف‌ها (مهم)</h2>
+        <div class="grid sm:grid-cols-2 gap-3 text-sm">
+          <div class="bg-slate-800/40 rounded-xl p-3">
+            <div class="text-xs text-slate-400 mb-1">قابل‌مصرف − مصرف تولید = مانده</div>
+            <div class="text-lg font-bold ${statusColor}">${fmtNum(stockDiff)} ${unit}</div>
+            <div class="text-xs ${statusColor} mt-1">${statusText}</div>
+            <div class="text-[10px] text-slate-500 mt-1">${fmtNum(usable)} − ${fmtNum(totalOut)} = ${fmtNum(stockDiff)}</div>
+          </div>
+          <div class="bg-slate-800/40 rounded-xl p-3">
+            <div class="text-xs text-slate-400 mb-1">مصرف تولید − وزن تئوری محصولات</div>
+            <div class="text-lg font-bold ${theoryDiffColor}">${fmtNum(theoryDiff)} ${unit}</div>
+            <div class="text-xs ${theoryDiffColor} mt-1">${theoryDiffText}</div>
+            <div class="text-[10px] text-slate-500 mt-1">ثبت‌شده ${fmtNum(totalOut)} · تئوری ${fmtNum(theoryTotal)} (تعداد × گرم تعریف)</div>
+          </div>
+        </div>
+        <p class="text-[10px] text-slate-500 mt-3">تئوری = جمع (تعداد هر محصول × وزن تعریف‌شده در محصولات). اگر اختلاف مثبت بزرگ باشد یعنی بیشتر از استاندارد مصرف شده یا ثبت اشتباه است.</p>
       </div>
 
       <div class="glass-card rounded-2xl p-4 mb-4">
         <div class="flex flex-wrap justify-between gap-2 text-sm">
           <span>برگشت به مواد: <strong class="text-cyan-300">${fmtNum(totalReturn)}</strong></span>
-          <span>مانده بازه: <strong class="${statusColor}">${fmtNum(remaining)}</strong> <span class="text-xs ${statusColor}">${statusText}</span></span>
+          <span>بازده از ورود: <strong>${fmtNum(yieldPct)}٪</strong></span>
         </div>
       </div>
 
@@ -1490,18 +1569,20 @@ Pages.materialPeriodReport = async function (material, df, dt) {
         ${prodRows.length ? `
           <div class="table-wrap">
             <table class="data text-sm">
-              <thead><tr><th>محصول</th><th>تعداد</th><th>وزن ماده</th><th>ضریب واقعی</th><th>تعریف</th><th>رکورد</th></tr></thead>
+              <thead><tr><th>محصول</th><th>تعداد</th><th>وزن ثبت‌شده</th><th>وزن تئوری</th><th>اختلاف</th><th>رکورد</th></tr></thead>
               <tbody>
-                ${prodRows.map(r => `
+                ${prodRows.map(r => {
+                  const dc = r.diffW == null ? '' : (Math.abs(r.diffW) < 0.02 ? 'text-brand-300' : r.diffW > 0 ? 'text-red-400' : 'text-amber-300');
+                  return `
                   <tr>
                     <td class="font-medium">${r.name}</td>
                     <td>${fmtNum(r.qty)}</td>
                     <td class="text-cyan-300">${fmtNum(r.weight)}</td>
-                    <td class="font-bold">${fmtNum(r.actual)}</td>
-                    <td class="text-slate-400">${r.expected != null ? fmtNum(r.expected) : '—'}</td>
+                    <td class="text-slate-400">${r.theoryW != null ? fmtNum(r.theoryW) : '—'}</td>
+                    <td class="font-bold ${dc}">${r.diffW != null ? ((r.diffW > 0 ? '+' : '') + fmtNum(r.diffW)) : '—'}</td>
                     <td class="text-slate-500">${r.n}</td>
-                  </tr>
-                `).join('')}
+                  </tr>`;
+                }).join('')}
               </tbody>
             </table>
           </div>
@@ -1539,6 +1620,7 @@ Pages.materialPeriodReport = async function (material, df, dt) {
       company, material, unit, df, dt,
       totalIn, totalWaste, usable, totalOut, totalReturn, remaining,
       wastePct, yieldPct, statusText, prodRows, eR, wR,
+      theoryTotal, theoryDiff, theoryDiffText, stockDiff,
     };
 
     const content = document.getElementById('page-content');
@@ -1562,19 +1644,24 @@ Pages.materialPeriodWhatsApp = function () {
     'ماده: ' + r.material + ' (' + r.unit + ')',
     'از ' + (r.df || '—') + ' تا ' + (r.dt || '—'),
     '══════════════════',
-    'ورود:       ' + r.totalIn,
-    'ضایعات:     ' + r.totalWaste + ' (' + r.wastePct + '٪)',
-    'قابل‌مصرف:  ' + r.usable,
-    'مصرف تولید: ' + r.totalOut + ' (بازده ' + r.yieldPct + '٪)',
-    'برگشت:      ' + r.totalReturn,
-    'مانده بازه: ' + r.remaining + ' — ' + r.statusText,
+    'ورود:         ' + r.totalIn,
+    'ضایعات:       ' + r.totalWaste + ' (' + r.wastePct + '٪)',
+    'قابل‌مصرف:    ' + r.usable,
+    'مصرف تولید:   ' + r.totalOut,
+    'برگشت:        ' + r.totalReturn,
     '──────────────────',
-    'محصولات از این ماده:',
+    '⚖️ اختلاف‌ها:',
+    'مانده (قابل‌مصرف − تولید): ' + (r.stockDiff != null ? r.stockDiff : r.remaining) + ' — ' + r.statusText,
+    'وزن تئوری محصولات: ' + (r.theoryTotal != null ? r.theoryTotal : '—'),
+    'اختلاف تولید با تئوری: ' + (r.theoryDiff != null ? r.theoryDiff : '—') + ' — ' + (r.theoryDiffText || ''),
+    '──────────────────',
+    'محصولات:',
   ];
   if (r.prodRows && r.prodRows.length) {
     r.prodRows.forEach(p => {
-      lines.push('• ' + p.name + ': ' + p.qty + ' عدد · ' + p.weight + ' ' + r.unit +
-        ' (ضریب ' + p.actual + (p.expected != null ? ' / تعریف ' + p.expected : '') + ')');
+      const d = p.diffW != null ? ((p.diffW > 0 ? '+' : '') + p.diffW) : '—';
+      lines.push('• ' + p.name + ': ' + p.qty + ' عدد · ثبت ' + p.weight +
+        ' · تئوری ' + (p.theoryW != null ? p.theoryW : '—') + ' · اختلاف ' + d);
     });
   } else {
     lines.push('• تولیدی ثبت نشده');
