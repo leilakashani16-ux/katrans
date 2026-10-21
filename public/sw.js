@@ -1,4 +1,4 @@
-const CACHE = 'ansar-v2-fast';
+const CACHE = 'ansar-v3-netfirst';
 const ASSETS = [
   './',
   './index.html',
@@ -40,10 +40,11 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
 
+  // API: always network, never cache
   if (url.pathname.startsWith('/api')) {
     e.respondWith(
       fetch(e.request).catch(() =>
-        new Response(JSON.stringify({ ok: false, error: 'offline' }), {
+        new Response(JSON.stringify({ ok: false, error: 'offline', code: 'SW_OFFLINE' }), {
           status: 503,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -52,7 +53,30 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Cache-first for static assets (much faster on weak networks / Iran)
+  const path = url.pathname;
+  const isCritical =
+    path === '/' ||
+    path.endsWith('.html') ||
+    path.endsWith('.js') ||
+    path.endsWith('manifest.json');
+
+  // HTML + JS: network-first (prevents stuck on old local-only code)
+  if (isCritical) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          if (res && res.status === 200) {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(e.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // Images and other static: cache-first
   e.respondWith(
     caches.match(e.request).then(cached => {
       const network = fetch(e.request)

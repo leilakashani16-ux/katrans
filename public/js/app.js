@@ -137,13 +137,27 @@ function enableCloudDB() {
   window.__cloudMode = true;
 }
 
+async function probeCloud(retries) {
+  let last = { ok: false, error: 'no attempt' };
+  for (let i = 0; i < (retries || 3); i++) {
+    try {
+      last = await Api.health();
+      if (last && last.ok) return last;
+    } catch (e) {
+      last = { ok: false, error: e.message || String(e) };
+    }
+    await new Promise(r => setTimeout(r, 400 * (i + 1)));
+  }
+  return last;
+}
+
 async function init() {
   const statusEl = document.getElementById('cloud-status');
   let cloud = false;
 
   if (window.Api) {
     Api.loadToken();
-    const health = await Api.health();
+    const health = await probeCloud(3);
     if (health.ok) {
       cloud = true;
       enableCloudDB();
@@ -153,12 +167,14 @@ async function init() {
       updateConnectionStatusUI('cloud');
     } else if (health.code === 'NO_D1') {
       if (statusEl) {
-        statusEl.innerHTML = '<span class="text-amber-400">● D1 وصل نیست — به README مراجعه کنید</span>';
+        statusEl.innerHTML = '<span class="text-amber-400">● D1 وصل نیست — Binding نام DB را در Cloudflare چک کنید</span>';
       }
       updateConnectionStatusUI('no_d1');
     } else {
+      const why = health.error || health.code || 'پاسخ health نگرفت';
+      console.warn('cloud health failed → local', health);
       if (statusEl) {
-        statusEl.innerHTML = '<span class="text-slate-500">● حالت محلی (آفلاین) — فقط همین دستگاه</span>';
+        statusEl.innerHTML = '<span class="text-amber-400">● حالت محلی — ابری وصل نشد: ' + String(why).slice(0, 80) + '</span>';
       }
       updateConnectionStatusUI('local');
     }
