@@ -200,6 +200,36 @@
       box-shadow: 0 25px 80px rgba(0,0,0,0.5), 0 0 60px rgba(16,185,129,0.08);
     }
 
+    /* نوار بالای موبایل — وضعیت اتصال + خروج */
+    #mobile-topbar {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 45;
+      background: rgba(8,12,22,0.94); backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(148,163,184,0.12);
+      padding: 0.5rem 0.75rem;
+      padding-top: max(0.5rem, env(safe-area-inset-top));
+      align-items: center; justify-content: space-between; gap: 0.5rem;
+    }
+    #mobile-topbar .conn-status {
+      font-size: 0.7rem; font-weight: 600; display: flex; align-items: center; gap: 0.35rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #mobile-topbar .conn-status .dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    #mobile-topbar .conn-status.cloud .dot { background: #34d389; box-shadow: 0 0 8px #34d389; }
+    #mobile-topbar .conn-status.local .dot { background: #fbbf24; }
+    #mobile-topbar .conn-status.offline .dot { background: #ef4444; }
+    #mobile-topbar .mob-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+    #mobile-topbar .mob-actions button {
+      padding: 0.35rem 0.7rem; border-radius: 0.55rem; font-size: 0.72rem; font-weight: 600;
+      border: 1px solid rgba(71,85,105,0.5); background: rgba(30,41,59,0.8); color: #e2e8f0;
+      cursor: pointer;
+    }
+    #mobile-topbar .mob-actions button.logout-btn {
+      background: linear-gradient(135deg,#dc2626,#ef4444); border: none; color: white;
+    }
+
     @media (max-width: 768px) {
       #sidebar {
         width: 100% !important; height: auto !important;
@@ -209,6 +239,7 @@
         z-index: 40; padding-bottom: env(safe-area-inset-bottom);
         background: rgba(8,12,22,0.92) !important; backdrop-filter: blur(20px);
       }
+      /* لوگو و بخش پایین سایدبار روی موبایل مخفی — به جاش نوار بالا */
       #sidebar > div:first-child, #sidebar > div:last-child { display: none !important; }
       #nav-links {
         display: flex !important; flex-direction: row !important; overflow-x: auto !important;
@@ -220,7 +251,14 @@
         white-space: nowrap; min-width: 3.4rem; text-align: center;
       }
       .sidebar-link span:first-child { font-size: 1.15rem; }
-      main.flex-1 { margin-right: 0 !important; margin-bottom: 4.5rem !important; padding: 1rem !important; }
+      main.flex-1 {
+        margin-right: 0 !important;
+        margin-bottom: 4.5rem !important;
+        margin-top: 3.2rem !important;
+        padding: 1rem !important;
+      }
+      #mobile-topbar { display: flex !important; }
+      body:has(#login-screen:not(.hidden)) #mobile-topbar { display: none !important; }
     }
   
     /* حالت شیفت شب — خوانایی روی تبلت آشپزخانه */
@@ -266,6 +304,18 @@
       <div id="cloud-status" class="mt-6 pt-4 border-t border-slate-700/50 text-xs text-center text-slate-500">
         در حال بررسی اتصال ابری...
       </div>
+    </div>
+  </div>
+
+  <!-- نوار بالای موبایل: وضعیت اتصال + خروج -->
+  <div id="mobile-topbar">
+    <div class="conn-status local" id="mobile-conn-status">
+      <span class="dot"></span>
+      <span id="mobile-conn-text">در حال بررسی...</span>
+    </div>
+    <div class="mob-actions">
+      <button type="button" onclick="Pages.toggleNightMode()" title="شیفت شب">🌙</button>
+      <button type="button" class="logout-btn" onclick="logout()">خروج</button>
     </div>
   </div>
 

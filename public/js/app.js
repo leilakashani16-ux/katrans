@@ -72,6 +72,40 @@ async function navigate(page) {
   }
 }
 
+
+function updateConnectionStatusUI(mode) {
+  // mode: 'cloud' | 'local' | 'offline' | 'no_d1'
+  const mobileEl = document.getElementById('mobile-conn-status');
+  const mobileText = document.getElementById('mobile-conn-text');
+  const roleLabel = document.getElementById('user-role-label');
+
+  const labels = {
+    cloud: 'اتصال ابری فعال — داده مشترک',
+    local: 'حالت محلی — فقط این دستگاه',
+    offline: 'آفلاین — بدون سرور',
+    no_d1: 'D1 وصل نیست',
+  };
+  const shortLabels = {
+    cloud: '☁️ ابری — ثبت‌ها ذخیره می‌شود',
+    local: '💾 محلی — فقط این دستگاه',
+    offline: '🔴 آفلاین',
+    no_d1: '⚠️ D1 وصل نیست',
+  };
+  const cls = mode === 'cloud' ? 'cloud' : (mode === 'local' ? 'local' : 'offline');
+
+  if (mobileEl && mobileText) {
+    mobileEl.className = 'conn-status ' + cls;
+    mobileText.textContent = shortLabels[mode] || labels[mode] || mode;
+  }
+  // keep role label in sync when already logged in
+  if (roleLabel && Auth.currentUser) {
+    const u = Auth.currentUser;
+    const modeTag = mode === 'cloud' ? '☁️ ابری' : mode === 'local' ? '💾 محلی' : '⚠️';
+    roleLabel.textContent =
+      (u.role === 'admin' ? 'مدیر سیستم' : u.role === 'entry' ? 'ثبت‌کننده ورود' : 'ثبت‌کننده تولید') + ' · ' + modeTag;
+  }
+}
+
 function enableCloudDB() {
   // Redirect all DB calls to Cloudflare D1 via /api — shared across devices
   window.__localDB = window.DB;
@@ -114,15 +148,20 @@ async function init() {
       if (statusEl) {
         statusEl.innerHTML = '<span class="text-brand-400">● اتصال ابری فعال — داده بین همه دستگاه‌ها مشترک است</span>';
       }
+      updateConnectionStatusUI('cloud');
     } else if (health.code === 'NO_D1') {
       if (statusEl) {
         statusEl.innerHTML = '<span class="text-amber-400">● D1 وصل نیست — به README مراجعه کنید</span>';
       }
+      updateConnectionStatusUI('no_d1');
     } else {
       if (statusEl) {
         statusEl.innerHTML = '<span class="text-slate-500">● حالت محلی (آفلاین) — فقط همین دستگاه</span>';
       }
+      updateConnectionStatusUI('local');
     }
+  } else {
+    updateConnectionStatusUI('offline');
   }
 
   if (!cloud) {
@@ -213,6 +252,27 @@ function startCloudSync() {
   window.__syncStarted = true;
   // 10 ثانیه — فقط وقتی version عوض شده صفحه رفرش می‌شود
   setInterval(() => softRefreshIfNeeded(), 10000);
+  // هر ۳۰ ثانیه وضعیت اتصال به D1 را چک کن
+  setInterval(async () => {
+    if (!window.Api || document.visibilityState !== 'visible') return;
+    try {
+      const h = await Api.health();
+      if (h.ok) {
+        if (!window.__cloudMode) {
+          enableCloudDB();
+          updateConnectionStatusUI('cloud');
+        } else {
+          updateConnectionStatusUI('cloud');
+        }
+      } else if (h.code === 'NO_D1') {
+        updateConnectionStatusUI('no_d1');
+      } else {
+        updateConnectionStatusUI('offline');
+      }
+    } catch {
+      updateConnectionStatusUI('offline');
+    }
+  }, 30000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') softRefreshIfNeeded();
   });
@@ -235,11 +295,16 @@ function maybeBackupReminder() {
 function showApp() {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
+  const topbar = document.getElementById('mobile-topbar');
+  if (topbar) topbar.style.display = ''; // let CSS media query control it
+
   const u = Auth.currentUser;
   const mode = window.__cloudMode ? '☁️ ابری' : '💾 محلی';
   document.getElementById('user-role-label').textContent =
     (u.role === 'admin' ? 'مدیر سیستم' : u.role === 'entry' ? 'ثبت‌کننده ورود' : 'ثبت‌کننده تولید') + ' · ' + mode;
   document.getElementById('user-name-label').textContent = u.full_name || u.username;
+  // وضعیت اتصال روی نوار موبایل
+  updateConnectionStatusUI(window.__cloudMode ? 'cloud' : 'local');
   navigate('dashboard');
   if (window.__cloudMode) startCloudSync();
   if (!sessionStorage.getItem('stock_notified')) {
