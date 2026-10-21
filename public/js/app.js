@@ -9,6 +9,7 @@ const NAV = {
     { id: 'wastes', label: 'ضایعات', icon: '🗑️' },
     { id: 'productions', label: 'تولید روزانه', icon: '🍳' },
     { id: 'materials', label: 'مواد اولیه', icon: '📦' },
+    { id: 'suppliers', label: 'طرف حساب', icon: '🤝' },
     { id: 'products', label: 'محصولات', icon: '🍢' },
     { id: 'personnel', label: 'پرسنل', icon: '👨‍🍳' },
     { id: 'league', label: 'لیگ پرسنل', icon: '🏆' },
@@ -22,6 +23,7 @@ const NAV = {
     { id: 'entries', label: 'ورود مواد', icon: '📥' },
     { id: 'wastes', label: 'ضایعات', icon: '🗑️' },
     { id: 'materials', label: 'موجودی مواد', icon: '📦' },
+    { id: 'suppliers', label: 'طرف حساب', icon: '🤝' },
     { id: 'reports', label: 'گزارش‌ها', icon: '📑' }
   ],
   production: [

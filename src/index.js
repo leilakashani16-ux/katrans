@@ -7,7 +7,7 @@
  * Requires D1 binding named "DB"
  */
 
-const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores']);
+const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers']);
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -198,6 +198,14 @@ async function _ensureSchemaOnce(db) {
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS suppliers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT,
+      notes TEXT,
+      active INTEGER DEFAULT 1
+    )`),
   ]);
 
   const row = await db.prepare('SELECT COUNT(*) as c FROM users').first();
@@ -386,7 +394,7 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     await ensureColumn(db, t, 'updated_by', 'TEXT');
     await ensureColumn(db, t, 'deleted_at', 'TEXT');
   }
-  for (const t of ['materials', 'products', 'personnel']) {
+  for (const t of ['materials', 'products', 'personnel', 'suppliers']) {
     await ensureColumn(db, t, 'deleted_at', 'TEXT');
   }
   // optional secondary unit for materials (display only, does not affect stock calc)
@@ -395,6 +403,20 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
 
 
 
+
+  
+  // Seed default suppliers (طرف حساب) if empty
+  try {
+    const sc = await db.prepare('SELECT COUNT(*) as c FROM suppliers').first();
+    if (!sc || sc.c === 0) {
+      await db.batch([
+        db.prepare("INSERT INTO suppliers (code,name,phone,notes,active) VALUES ('S-001','زربال','','تامین مرغ',1)"),
+        db.prepare("INSERT INTO suppliers (code,name,phone,notes,active) VALUES ('S-002','شیخی','','گوشت',1)"),
+        db.prepare("INSERT INTO suppliers (code,name,phone,notes,active) VALUES ('S-003','مقدم','','ماهی و متفرقه',1)"),
+        db.prepare("INSERT INTO suppliers (code,name,phone,notes,active) VALUES ('S-004','مرادی','','',1)"),
+      ]);
+    }
+  } catch (e) {}
 
   await db.prepare(`CREATE TABLE IF NOT EXISTS staff_scores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -643,7 +665,7 @@ async function handleApi(request, env) {
       const body = await request.json().catch(() => ({}));
       const st = String(body.store || '');
       const rid = Number(body.id);
-      const allowed = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel']);
+      const allowed = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers']);
       if (!allowed.has(st) || !rid) return json({ error: 'invalid' }, 400);
       try {
         await env.DB.prepare(`UPDATE ${st} SET deleted_at = NULL WHERE id = ?`).bind(rid).run();
@@ -675,7 +697,7 @@ async function handleApi(request, env) {
 
     if (request.method === 'GET' && !id) {
       // soft-delete: hide deleted rows by default (except audit/users)
-      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel']);
+      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers']);
       let rows;
       if (softStores.has(store)) {
         try {
@@ -909,7 +931,7 @@ const keys = Object.keys(body).filter((k) => body[k] !== undefined);
         console.error('audit log failed', e);
       }
       // soft delete when column exists; hard delete for users / fallback
-      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel']);
+      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers']);
       if (softStores.has(store)) {
         try {
           await env.DB.prepare(

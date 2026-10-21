@@ -138,9 +138,43 @@ Pages.dashboard = async function () {
     label: name, value: c, color: COLORS[i % COLORS.length],
   }));
 
+  // تعداد تولید هر محصول (جوجه، کوبیده، ماهی، لوبیاپلو و …)
+  const prodQty = {};
+  productions.forEach(p => {
+    const n = p.product_name || 'نامشخص';
+    prodQty[n] = (prodQty[n] || 0) + Number(p.quantity || 0);
+  });
+  const topProducts = Object.entries(prodQty).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const sumProdQty = topProducts.reduce((s, [, v]) => s + v, 0) || 1;
+  const productItems = topProducts.map(([name, q], i) => ({
+    label: name, value: q, color: COLORS[i % COLORS.length],
+  }));
+
+  // نوار افقی برای تعداد محصولات (خواناتر از دونات وقتی نام‌ها طولانی‌اند)
+  const barCard = (title, sub, items, maxVal) => {
+    if (!items.length) {
+      return '<div class="glass-card rounded-2xl p-5 min-h-[220px]"><h2 class="font-semibold mb-2">' + title + '</h2><p class="text-slate-500 text-sm">داده‌ای نیست</p></div>';
+    }
+    const rows = items.map((it) => {
+      const pct = maxVal > 0 ? Math.round((it.value / maxVal) * 100) : 0;
+      return '<div class="mb-2.5">' +
+        '<div class="flex justify-between text-xs mb-1 gap-2">' +
+        '<span class="text-slate-300 truncate">' + it.label + '</span>' +
+        '<span class="text-slate-100 font-medium whitespace-nowrap">' + fmtNum(it.value) + '</span></div>' +
+        '<div class="h-2 rounded-full bg-slate-800 overflow-hidden">' +
+        '<div class="h-full rounded-full" style="width:' + pct + '%;background:' + it.color + '"></div>' +
+        '</div></div>';
+    }).join('');
+    return '<div class="glass-card rounded-2xl p-5">' +
+      '<h2 class="font-semibold mb-0.5">' + title + '</h2>' +
+      '<p class="text-xs text-slate-400 mb-4">' + sub + '</p>' + rows + '</div>';
+  };
+  const maxProdQty = topProducts.length ? topProducts[0][1] : 1;
+
   const chartsHtml =
     '<div class="grid lg:grid-cols-2 gap-6 mb-8">' +
-    donutCard('📊 مصرف مواد', 'واحد هر ماده (کیلو یا عدد)', matItems, sumMat, (it) => fmtNum(it.value) + ' ' + (it.unit || '')) +
+    barCard('🍢 تعداد تولید محصولات', 'جوجه، کوبیده، ماهی، لوبیاپلو و … (بر اساس فیلتر تاریخ)', productItems, maxProdQty) +
+    donutCard('📊 سهم تعداد محصولات', 'درصد از کل تعداد تولید', productItems, sumProdQty, (it) => fmtNum(it.value) + ' عدد') +
     donutCard('📦 وضعیت موجودی', 'تعداد اقلام در هر وضعیت', stockGroups, sumStockG, (it) => it.value + ' قلم') +
     donutCard('👨‍🍳 سهم پرسنل', 'بر اساس فیلد مصرف', staffItems, sumStaff, (it) => fmtNum(it.value) + ' · ' + (it.count || 0) + ' رکورد') +
     donutCard('✍️ ثبت‌کننده‌ها', 'ورود + تولید + ضایعات', userItems, sumUser, (it) => it.value + ' رکورد') +
@@ -498,9 +532,14 @@ Pages.clearFilter = function (page) {
 Pages.showEntryForm = async function (id) {
   if (!Auth.canEntry() && !id) return;
   if (id && !Auth.canEditDelete()) return toast('فقط مدیر می‌تواند ویرایش کند', 'error');
-  const materials = await DB.getAll('materials');
+  const [materials, suppliers] = await Promise.all([
+    DB.getAll('materials'),
+    DB.getAll('suppliers').catch(() => []),
+  ]);
   let item = { date: todayJalali(), material_name: '', quantity: '', supplier: '', invoice_no: '', notes: '' };
   if (id) item = await DB.getById('entries', id) || item;
+  const supplierOpts = (suppliers || []).filter(s => s.active !== false && s.active !== 0)
+    .map(s => `<option value="${s.name}" ${item.supplier===s.name?'selected':''}>${s.name}</option>`).join('');
 
   showModal(`
     <div class="modal">
@@ -515,7 +554,15 @@ Pages.showEntryForm = async function (id) {
           </select>
         </div>
         <div><label class="text-xs text-slate-400">مقدار</label><input name="quantity" type="number" step="0.01" class="input-field" value="${item.quantity || ''}" required /></div>
-        <div><label class="text-xs text-slate-400">تأمین‌کننده</label><input name="supplier" class="input-field" value="${item.supplier || ''}" /></div>
+        <div>
+          <label class="text-xs text-slate-400">طرف حساب / تأمین‌کننده</label>
+          <select name="supplier" class="input-field">
+            <option value="">— انتخاب یا خالی —</option>
+            ${supplierOpts}
+            ${item.supplier && !(suppliers||[]).some(s => s.name === item.supplier) ? `<option value="${item.supplier}" selected>${item.supplier} (قدیمی)</option>` : ''}
+          </select>
+          <p class="text-[10px] text-slate-500 mt-1">لیست از منوی «طرف حساب» مدیریت می‌شود</p>
+        </div>
         <div><label class="text-xs text-slate-400">شماره فاکتور</label><input name="invoice_no" class="input-field" value="${item.invoice_no || ''}" /></div>
         <div><label class="text-xs text-slate-400">توضیحات</label><textarea name="notes" class="input-field" rows="2">${item.notes || ''}</textarea></div>
         <div class="flex gap-2 pt-2">
@@ -1335,6 +1382,104 @@ Pages.deletePerson = async function (id, name) {
   } catch (e) {
     console.error(e);
     toast(e.message || 'خطا در حذف پرسنل', 'error');
+  }
+};
+
+
+
+/* ========== SUPPLIERS / طرف حساب ========== */
+Pages.suppliers = async function () {
+  let list = [];
+  try { list = await DB.getAll('suppliers'); } catch (e) { list = []; }
+  const canEdit = Auth.isAdmin() || Auth.canEntry();
+
+  return `
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">طرف حساب / تأمین‌کننده‌ها</h1>
+        <p class="text-slate-400 text-sm">برای انتخاب در فرم ورود مواد</p>
+      </div>
+      <div class="flex gap-2">
+        ${canEdit ? `<button class="btn-primary" onclick="Pages.showSupplierForm()">+ افزودن طرف حساب</button>` : ''}
+      </div>
+    </div>
+    <div class="glass-card rounded-2xl p-4">
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr>
+            <th>کد</th><th>نام</th><th>تلفن</th><th>توضیح</th><th>فعال</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${list.length ? list.map(s => `
+              <tr>
+                <td class="text-slate-400">${s.code || '—'}</td>
+                <td class="font-medium">${s.name || '—'}</td>
+                <td>${s.phone || '—'}</td>
+                <td class="text-slate-400 text-sm">${s.notes || '—'}</td>
+                <td>${s.active !== false && s.active !== 0 ? '<span class="badge badge-ok">بله</span>' : '<span class="badge badge-danger">خیر</span>'}</td>
+                <td class="whitespace-nowrap">
+                  ${canEdit ? `<button class="btn-ghost text-xs" onclick="Pages.showSupplierForm(${s.id})">ویرایش</button>
+                  ${Auth.isAdmin() ? `<button class="btn-ghost text-xs text-red-400" onclick="Pages.deleteSupplier(${s.id})">حذف</button>` : ''}` : ''}
+                </td>
+              </tr>
+            `).join('') : '<tr><td colspan="6" class="text-center text-slate-500 py-8">هنوز طرف حسابی ثبت نشده</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+};
+
+Pages.showSupplierForm = async function (id) {
+  if (!Auth.isAdmin() && !Auth.canEntry()) return toast('دسترسی ندارید', 'error');
+  let item = { code: '', name: '', phone: '', notes: '', active: 1 };
+  if (id) item = await DB.getById('suppliers', id) || item;
+
+  showModal(`
+    <div class="modal">
+      <h3 class="text-lg font-bold mb-4">${id ? 'ویرایش طرف حساب' : 'افزودن طرف حساب'}</h3>
+      <form id="supplier-form" class="space-y-3">
+        <div><label class="text-xs text-slate-400">کد</label><input name="code" class="input-field" value="${item.code||''}" required ${id?'readonly':''} placeholder="مثلاً S-010" /></div>
+        <div><label class="text-xs text-slate-400">نام / عنوان</label><input name="name" class="input-field" value="${item.name||''}" required placeholder="مثلاً زربال" /></div>
+        <div><label class="text-xs text-slate-400">تلفن</label><input name="phone" class="input-field" value="${item.phone||''}" /></div>
+        <div><label class="text-xs text-slate-400">توضیحات</label><textarea name="notes" class="input-field" rows="2">${item.notes||''}</textarea></div>
+        <div class="flex gap-2 pt-2">
+          <button type="submit" class="btn-primary flex-1">ذخیره</button>
+          <button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button>
+        </div>
+      </form>
+    </div>
+  `);
+
+  document.getElementById('supplier-form').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const btn = ev.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'در حال ذخیره...'; }
+    try {
+      const data = Object.fromEntries(new FormData(ev.target).entries());
+      data.active = 1;
+      if (id) { data.id = id; await DB.put('suppliers', data); }
+      else await DB.add('suppliers', data);
+      toast('ذخیره شد', 'success');
+      closeModal();
+      navigate('suppliers');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در ذخیره', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
+    }
+  };
+};
+
+Pages.deleteSupplier = async function (id) {
+  if (!Auth.isAdmin()) return toast('فقط مدیر', 'error');
+  if (!confirmAction('این طرف حساب حذف شود؟')) return;
+  try {
+    await DB.remove('suppliers', id);
+    toast('حذف شد', 'success');
+    navigate('suppliers');
+  } catch (e) {
+    toast(e.message || 'خطا', 'error');
   }
 };
 
