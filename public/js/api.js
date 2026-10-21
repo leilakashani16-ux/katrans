@@ -6,6 +6,39 @@ const Api = {
   base: '', // same origin → /api
   token: null,
   online: false,
+  // Short in-memory cache for list/stock (cuts repeated navigations)
+  _cache: new Map(),
+  _ttlMs: 8000,
+
+  _cacheKey(path) { return path; },
+  _getCache(path) {
+    const k = this._cacheKey(path);
+    const hit = this._cache.get(k);
+    if (!hit) return null;
+    if (Date.now() - hit.t > this._ttlMs) {
+      this._cache.delete(k);
+      return null;
+    }
+    return hit.v;
+  },
+  _setCache(path, v) {
+    this._cache.set(this._cacheKey(path), { t: Date.now(), v });
+  },
+  invalidateCache(prefix) {
+    if (!prefix) {
+      this._cache.clear();
+      return;
+    }
+    for (const k of [...this._cache.keys()]) {
+      if (k === prefix || k.startsWith(prefix + '/') || k.startsWith(prefix + '?')) {
+        this._cache.delete(k);
+      }
+    }
+    // stock depends on almost everything
+    if (['entries', 'productions', 'wastes', 'returns', 'materials', 'products'].some(s => prefix === s || prefix.startsWith(s))) {
+      this._cache.delete('stock');
+    }
+  },
 
   get headers() {
     const h = { 'Content-Type': 'application/json' };
@@ -80,31 +113,45 @@ const Api = {
     localStorage.removeItem('kitchen_session');
   },
 
-  getAll(store) {
-    return this.request(store);
+  async getAll(store) {
+    const cached = this._getCache(store);
+    if (cached) return cached;
+    const data = await this.request(store);
+    this._setCache(store, data);
+    return data;
   },
 
   getById(store, id) {
     return this.request(store + '/' + id);
   },
 
-  add(store, item) {
-    return this.request(store, { method: 'POST', body: JSON.stringify(item) });
+  async add(store, item) {
+    const r = await this.request(store, { method: 'POST', body: JSON.stringify(item) });
+    this.invalidateCache(store);
+    return r;
   },
 
-  put(store, item) {
+  async put(store, item) {
     const id = item.id;
     const body = { ...item };
     delete body.id;
-    return this.request(store + '/' + id, { method: 'PUT', body: JSON.stringify(body) });
+    const r = await this.request(store + '/' + id, { method: 'PUT', body: JSON.stringify(body) });
+    this.invalidateCache(store);
+    return r;
   },
 
-  remove(store, id) {
-    return this.request(store + '/' + id, { method: 'DELETE' });
+  async remove(store, id) {
+    const r = await this.request(store + '/' + id, { method: 'DELETE' });
+    this.invalidateCache(store);
+    return r;
   },
 
-  calcStock() {
-    return this.request('stock');
+  async calcStock() {
+    const cached = this._getCache('stock');
+    if (cached) return cached;
+    const data = await this.request('stock');
+    this._setCache('stock', data);
+    return data;
   },
 
   backup() {

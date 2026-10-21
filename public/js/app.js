@@ -240,6 +240,7 @@ async function softRefreshIfNeeded() {
       const ver = Number(v.version || 0);
       if (window.__dataVersion && ver === window.__dataVersion) return;
       window.__dataVersion = ver;
+      if (window.Api && Api.invalidateCache) Api.invalidateCache();
     }
     await navigate(currentPage);
   } catch (e) {

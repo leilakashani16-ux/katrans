@@ -4,10 +4,22 @@
 const Pages = {};
 
 Pages.dashboard = async function () {
-  const stock = await DB.calcStock();
-  let entries = await DB.getAll('entries');
-  let productions = await DB.getAll('productions');
-  let wastes = await DB.getAll('wastes');
+  // Parallel fetch — was serial (biggest client latency)
+  const [stock, entries0, productions0, wastes0, products0, plans0, scores0] = await Promise.all([
+    DB.calcStock(),
+    DB.getAll('entries'),
+    DB.getAll('productions'),
+    DB.getAll('wastes'),
+    DB.getAll('products').catch(() => []),
+    DB.getAll('daily_plans').catch(() => []),
+    DB.getAll('staff_scores').catch(() => []),
+  ]);
+  let entries = entries0 || [];
+  let productions = productions0 || [];
+  let wastes = wastes0 || [];
+  let products = products0 || [];
+  let plans = plans0 || [];
+  let scores = scores0 || [];
   // advanced dashboard date filter
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const df = params.get('df') || '';
@@ -17,12 +29,6 @@ Pages.dashboard = async function () {
     productions = filterByDateAndSearch(productions, df, dt, '', ['date']);
     wastes = filterByDateAndSearch(wastes, df, dt, '', ['date']);
   }
-  let products = [];
-  try { products = await DB.getAll('products'); } catch (e) { products = []; }
-  let plans = [];
-  try { plans = (await DB.getAll('daily_plans')) || []; } catch (e) { plans = []; }
-  let scores = [];
-  try { scores = (await DB.getAll('staff_scores')) || []; } catch (e) { scores = []; }
 
   const totalWeight = productions.reduce((s, p) => s + Number(p.material_weight || 0), 0);
   const totalQty = productions.reduce((s, p) => s + Number(p.quantity || 0), 0);
@@ -822,10 +828,13 @@ Pages.productions = async function () {
 Pages.showProdForm = async function (id) {
   if (!Auth.canProduction() && !id) return;
   if (id && !Auth.canEditDelete()) return toast('فقط مدیر', 'error');
-  const products = await DB.getAll('products');
-  const personnel = await DB.getAll('personnel');
   let item = { date: todayJalali(), product_name: '', quantity: '', material_weight: '', material_name: '', shift_code: '', start_time: '', end_time: '', duration_minutes: '', producer_name: '', remainder_count: 0, remainder_weight: 0, remainder_type: 'حمل به روز بعد', notes: '' };
-  if (id) item = await DB.getById('productions', id) || item;
+  const [products, personnel, item0] = await Promise.all([
+    DB.getAll('products'),
+    DB.getAll('personnel'),
+    id ? DB.getById('productions', id) : Promise.resolve(null),
+  ]);
+  if (id) item = item0 || item;
 
   showModal(`
     <div class="modal" style="max-width:36rem">
@@ -2089,9 +2098,12 @@ Pages.showDayLocks = async function () {
 
 Pages.staffReportPrompt = async function (preselectName) {
   try {
-    const personnel = (await DB.getAll('personnel')).filter(p => p.active !== false);
+    const [personnelRaw, prods] = await Promise.all([
+      DB.getAll('personnel'),
+      DB.getAll('productions'),
+    ]);
+    const personnel = (personnelRaw || []).filter(p => p.active !== false);
     const names = personnel.map(p => p.name).filter(Boolean);
-    const prods = await DB.getAll('productions');
     prods.forEach(p => {
       if (p.producer_name && !names.includes(p.producer_name)) names.push(p.producer_name);
     });
@@ -2217,10 +2229,13 @@ Pages.toggleNightMode = function () {
 Pages.shiftSummary = async function () {
   try {
     const today = todayJalali();
-    const entries = await DB.getAll('entries');
-    const productions = await DB.getAll('productions');
-    const wastes = await DB.getAll('wastes');
-    const stock = await DB.calcStock();
+    const [entries, productions, wastes, stock, allScores0] = await Promise.all([
+      DB.getAll('entries'),
+      DB.getAll('productions'),
+      DB.getAll('wastes'),
+      DB.calcStock(),
+      DB.getAll('staff_scores').catch(() => []),
+    ]);
     const eT = entries.filter(x => x.date === today);
     const pT = productions.filter(x => x.date === today);
     const wT = wastes.filter(x => x.date === today);
@@ -2234,8 +2249,7 @@ Pages.shiftSummary = async function () {
       board[n] = (board[n] || 0) + Number(pr.quantity || 0);
     });
     const top = Object.entries(board).sort((a, b) => b[1] - a[1])[0];
-    let scoreRows = [];
-    try { scoreRows = ((await DB.getAll('staff_scores')) || []).filter(s => s.day === today); } catch (e) {}
+    let scoreRows = ((allScores0 || []).filter(s => s.day === today));
     scoreRows.sort((a, b) => Number(b.score) - Number(a.score));
     const scoreLines = scoreRows.length
       ? scoreRows.map((s, i) => {
@@ -2244,8 +2258,7 @@ Pages.shiftSummary = async function () {
         })
       : ['هنوز نمره‌ای ثبت نشده'];
     // league 30-day snippet for motivation
-    let allScores = [];
-    try { allScores = (await DB.getAll('staff_scores')) || []; } catch (e) {}
+    let allScores = allScores0 || [];
     const league30 = Pages._buildLeague(allScores, 30);
     const leagueLines = league30.length
       ? league30.slice(0, 8).map(r => {

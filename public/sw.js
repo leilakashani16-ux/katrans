@@ -1,4 +1,4 @@
-const CACHE = 'ansar-v1';
+const CACHE = 'ansar-v2-fast';
 const ASSETS = [
   './',
   './index.html',
@@ -52,15 +52,19 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  // Cache-first for static assets (much faster on weak networks / Iran)
   e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        if (res && res.status === 200) {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return res;
-      })
-      .catch(() => caches.match(e.request))
+    caches.match(e.request).then(cached => {
+      const network = fetch(e.request)
+        .then(res => {
+          if (res && res.status === 200) {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(e.request, clone));
+          }
+          return res;
+        })
+        .catch(() => cached);
+      return cached || network;
+    })
   );
 });

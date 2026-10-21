@@ -93,7 +93,24 @@ async function isDayLocked(db, day) {
   return !!row;
 }
 
+// Schema bootstrap — once per Worker isolate (huge win on D1)
+let __schemaReady = false;
+let __schemaPromise = null;
+
 async function ensureSchema(db) {
+  if (__schemaReady) return;
+  if (__schemaPromise) return __schemaPromise;
+  __schemaPromise = _ensureSchemaOnce(db).then(() => {
+    __schemaReady = true;
+    __schemaPromise = null;
+  }).catch(e => {
+    __schemaPromise = null;
+    throw e;
+  });
+  return __schemaPromise;
+}
+
+async function _ensureSchemaOnce(db) {
   // Create tables if missing (idempotent)
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS users (
