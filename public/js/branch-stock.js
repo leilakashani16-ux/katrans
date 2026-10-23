@@ -50,6 +50,7 @@
       (canEdit
         ? '<button class="btn-primary" onclick="Pages.showTransferForm()">+ ثبت ارسال</button>'
         : '') +
+      '<button class="btn-secondary text-sm" onclick="Pages.transferWhatsApp()">📱 واتساپ امروز</button>' +
       '<button class="btn-secondary text-sm" onclick="Pages.transferReportForm()">📑 گزارش</button>' +
       '</div></div>' +
       '<div class="glass-card rounded-2xl p-3 mb-4 text-sm text-slate-300 border border-amber-500/20 flex gap-3 items-center">' +
@@ -73,6 +74,9 @@
                 '<button class="btn-ghost text-xs" onclick="Pages.viewTransfer(' +
                 t.id +
                 ')">جزئیات</button> ' +
+                '<button class="btn-ghost text-xs text-brand-300" onclick="Pages.transferWhatsApp(\'' +
+                String(t.date || '').replace(/'/g, '') +
+                '\')">📱</button> ' +
                 (canEdit
                   ? '<button class="btn-ghost text-xs text-red-400" onclick="Pages.deleteTransfer(' +
                     t.id +
@@ -289,7 +293,11 @@
           })
           .join('') +
         '</tbody></table></div>' +
-        '<button class="btn-secondary w-full mt-4" onclick="closeModal()">بستن</button></div>'
+        '<div class="flex gap-2 mt-4">' +
+        '<button class="btn-primary flex-1" onclick="closeModal(); Pages.transferWhatsApp(\'' +
+        String(t.date || '').replace(/'/g, '') +
+        '\')">📱 واتساپ این روز</button>' +
+        '<button class="btn-secondary" onclick="closeModal()">بستن</button></div></div>'
     );
   };
 
@@ -305,6 +313,138 @@
       toast('حذف شد', 'success');
       navigate('transfers');
     } catch (e) {
+      toast(e.message || 'خطا', 'error');
+    }
+  };
+
+
+  Pages.transferWhatsApp = async function (day) {
+    day = day || todayJalali();
+    try {
+      var transfers = ((await DB.getAll('branch_transfers').catch(function () { return []; })) || []).filter(function (t) {
+        return !t.deleted_at && t.date === day;
+      });
+      var allItems = (await DB.getAll('branch_transfer_items').catch(function () { return []; })) || [];
+      var ids = {};
+      transfers.forEach(function (t) { ids[t.id] = t; });
+      var lines = allItems.filter(function (i) { return ids[i.transfer_id]; });
+
+      var company = 'غذای انصار';
+      try {
+        var local = localStorage.getItem('kitchen_settings');
+        if (local) company = JSON.parse(local).company_name || company;
+      } catch (_) {}
+
+      var textLines = [
+        '🚚 گزارش ارسال شعبه — ' + company,
+        '📅 تاریخ: ' + day,
+        '══════════════════'
+      ];
+
+      if (!transfers.length) {
+        textLines.push('برای این تاریخ ارسالی ثبت نشده.');
+      } else {
+        var byBranch = {};
+        transfers.forEach(function (t) {
+          var b = t.branch_name || 'گاردنیا';
+          if (!byBranch[b]) byBranch[b] = [];
+          byBranch[b].push(t);
+        });
+
+        Object.keys(byBranch).forEach(function (branch) {
+          textLines.push('');
+          textLines.push('🌿 شعبه: ' + branch);
+          textLines.push('─────────────');
+          byBranch[branch].forEach(function (t, idx) {
+            var items = lines.filter(function (i) { return Number(i.transfer_id) === Number(t.id); });
+            if (transfers.length > 1) textLines.push('ارسال ' + (idx + 1) + (t.notes ? ' (' + t.notes + ')' : '') + ':');
+            else if (t.notes) textLines.push('توضیح: ' + t.notes);
+            if (!items.length) {
+              textLines.push('  (بدون قلم)');
+            } else {
+              items.forEach(function (i, n) {
+                var typeL = TYPE_LABELS[i.item_type] || i.item_type;
+                textLines.push(
+                  (n + 1) + ') ' + i.item_name +
+                  ' — ' + (Number(i.quantity) || 0) +
+                  (i.unit ? ' ' + i.unit : '') +
+                  ' [' + typeL + ']'
+                );
+              });
+            }
+          });
+        });
+
+        // summary by item name
+        var sum = {};
+        lines.forEach(function (i) {
+          var k = i.item_name + '|' + (i.unit || '') + '|' + (i.item_type || '');
+          if (!sum[k]) sum[k] = { name: i.item_name, unit: i.unit || '', type: i.item_type, qty: 0 };
+          sum[k].qty += Number(i.quantity || 0);
+        });
+        var sumRows = Object.keys(sum).map(function (k) { return sum[k]; });
+        if (sumRows.length) {
+          textLines.push('');
+          textLines.push('📊 جمع اقلام روز:');
+          textLines.push('─────────────');
+          sumRows.sort(function (a, b) { return a.name.localeCompare(b.name, 'fa'); });
+          sumRows.forEach(function (r) {
+            textLines.push('• ' + r.name + ': ' + r.qty + (r.unit ? ' ' + r.unit : ''));
+          });
+        }
+        textLines.push('');
+        textLines.push('تعداد برگه ارسال: ' + transfers.length);
+        textLines.push('تعداد ردیف: ' + lines.length);
+      }
+
+      textLines.push('══════════════════');
+      textLines.push('ثبت از سیستم گردش مواد — ' + company);
+
+      var text = textLines.join('\n');
+      showModal(
+        '<div class="modal max-w-lg" onclick="event.stopPropagation()"><h3 class="text-lg font-bold mb-2">📱 گزارش واتساپ — ارسال شعبه</h3>' +
+        '<p class="text-xs text-slate-400 mb-2">تاریخ: <b>' + day + '</b> — کپی کن و تو گروه بذار</p>' +
+        '<div class="flex gap-2 mb-2">' +
+        '<input id="wa-day" class="input-field text-sm flex-1" value="' + day + '" />' +
+        '<button type="button" class="btn-secondary text-sm" onclick="Pages.transferWhatsApp(document.getElementById(\'wa-day\').value)">بارگذاری</button></div>' +
+        '<textarea id="transfer-wa-text" class="input-field font-mono text-xs h-64" readonly></textarea>' +
+        '<div class="modal-sticky-actions flex gap-2">' +
+        '<button type="button" class="btn-primary flex-1" id="btn-copy-transfer-wa">📋 کپی متن</button>' +
+        '<button type="button" class="btn-secondary" id="btn-share-transfer-wa">اشتراک</button>' +
+        '<button type="button" class="btn-ghost" onclick="closeModal()">بستن</button></div></div>'
+      );
+      var ta = document.getElementById('transfer-wa-text');
+      if (ta) ta.value = text;
+      document.getElementById('btn-copy-transfer-wa').onclick = async function () {
+        try {
+          await navigator.clipboard.writeText(text);
+          toast('کپی شد — برو تو واتساپ پیست کن', 'success');
+        } catch (err) {
+          if (ta) { ta.focus(); ta.select(); }
+          toast('متن را نگه دار و کپی کن', 'info');
+        }
+      };
+      var shareBtn = document.getElementById('btn-share-transfer-wa');
+      if (shareBtn) {
+        shareBtn.onclick = async function () {
+          if (navigator.share) {
+            try {
+              await navigator.share({ text: text });
+            } catch (e) {
+              if (e && e.name !== 'AbortError') toast('اشتراک ناموفق', 'error');
+            }
+          } else {
+            try {
+              await navigator.clipboard.writeText(text);
+              toast('کپی شد — واتساپ را باز کن و پیست کن', 'success');
+            } catch (_) {
+              if (ta) { ta.focus(); ta.select(); }
+            }
+          }
+        };
+      }
+    } catch (e) {
+      console.error(e);
       toast(e.message || 'خطا', 'error');
     }
   };
