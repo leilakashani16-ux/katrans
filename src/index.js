@@ -7,7 +7,7 @@
  * Requires D1 binding named "DB"
  */
 
-const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers']);
+const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals']);
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -401,6 +401,41 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
   await ensureColumn(db, 'materials', 'secondary_unit', 'TEXT');
   await ensureColumn(db, 'materials', 'unit_factor', 'REAL');
 
+  // پرسنل: تیم + نوع شیفت (برای غذای پرسنلی و تقویم آینده)
+  await ensureColumn(db, 'personnel', 'team', "TEXT DEFAULT 'executive'");
+  await ensureColumn(db, 'personnel', 'shift_type', "TEXT DEFAULT 'full'");
+  try {
+    await db.prepare("UPDATE personnel SET team = 'executive' WHERE team IS NULL OR team = ''").run();
+    await db.prepare("UPDATE personnel SET shift_type = 'full' WHERE shift_type IS NULL OR shift_type = ''").run();
+  } catch (e) {}
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS daily_staff_menu (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT UNIQUE NOT NULL,
+    breakfast_name TEXT,
+    main_meal_name TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT
+  )`).run();
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS attendance_meals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    person_id INTEGER NOT NULL,
+    person_name TEXT,
+    team TEXT,
+    present INTEGER DEFAULT 0,
+    breakfast INTEGER DEFAULT 0,
+    lunch INTEGER DEFAULT 0,
+    dinner INTEGER DEFAULT 0,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT,
+    UNIQUE(date, person_id)
+  )`).run();
+
+
 
 
 
@@ -736,7 +771,7 @@ async function handleApi(request, env) {
       if (store === 'productions' && !['admin', 'production'].includes(user.role)) {
         return json({ error: 'forbidden' }, 403);
       }
-      if (['materials', 'products', 'personnel', 'daily_plans', 'staff_scores'].includes(store) && user.role !== 'admin') {
+      if (['materials', 'products', 'personnel', 'daily_plans', 'staff_scores', 'daily_staff_menu', 'attendance_meals'].includes(store) && user.role !== 'admin') {
         return json({ error: 'admin only' }, 403);
       }
 

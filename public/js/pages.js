@@ -906,7 +906,7 @@ Pages.showProdForm = async function (id) {
           <label class="text-xs text-slate-400">تولیدکننده</label>
           <select name="producer_name" class="input-field">
             <option value="">—</option>
-            ${personnel.filter(p=>p.active!==false).map(p => `<option value="${p.name}" ${item.producer_name===p.name?'selected':''}>${p.name} (${p.position})</option>`).join('')}
+            ${personnel.filter(p=>p.active!==false && (p.team||'executive')==='executive').map(p => `<option value="${p.name}" ${item.producer_name===p.name?'selected':''}>${p.name} (${p.position||''})</option>`).join('')}
           </select>
         </div>
         <div class="grid grid-cols-3 gap-3">
@@ -1498,6 +1498,7 @@ Pages.reports = async function () {
         <button class="btn-secondary w-full" onclick="Pages.exportWastes()">📥 گزارش ضایعات</button>
         <button class="btn-secondary w-full" onclick="Pages.exportStock()">📥 گزارش موجودی تفصیلی</button>
         <button class="btn-secondary w-full" onclick="Pages.staffReportPrompt()">👤 گزارش کار یک پرسنل</button>
+        <button class="btn-secondary w-full" onclick="Pages.staffMealReportForm()">🍽️ گزارش حضور و غذای پرسنلی</button>
         <button class="btn-primary w-full" onclick="Pages.materialPeriodForm()">📦 گزارش بازه ماده (ورود تا اتمام)</button>
       </div>
       <div class="glass-card rounded-2xl p-6 space-y-3">
@@ -2153,6 +2154,11 @@ Pages.settings = async function () {
       </form>
     </div>
     <div class="glass-card rounded-2xl p-6 max-w-lg mt-4">
+      <h2 class="font-semibold mb-2">طرف حساب</h2>
+      <p class="text-sm text-slate-400 mb-3">تامین‌کنندگان و طرف‌حساب‌ها از اینجا مدیریت می‌شوند (برای سبک‌ماندن نوار کناری)</p>
+      <button class="btn-secondary w-full" onclick="navigate('suppliers')">🤝 مدیریت طرف حساب</button>
+    </div>
+    <div class="glass-card rounded-2xl p-6 max-w-lg mt-4">
       <h2 class="font-semibold mb-2">ثبت سریع</h2>
       <p class="text-sm text-slate-400 mb-3">میانبر برای ثبت سریع ورود / تولید / ضایعات</p>
       <div class="flex flex-wrap gap-2">
@@ -2247,7 +2253,7 @@ Pages.staffReportPrompt = async function (preselectName) {
       DB.getAll('personnel'),
       DB.getAll('productions'),
     ]);
-    const personnel = (personnelRaw || []).filter(p => p.active !== false);
+    const personnel = (personnelRaw || []).filter(p => p.active !== false && (p.team||'executive')==='executive');
     const names = personnel.map(p => p.name).filter(Boolean);
     prods.forEach(p => {
       if (p.producer_name && !names.includes(p.producer_name)) names.push(p.producer_name);
@@ -2771,7 +2777,7 @@ Pages.scoreStaffForm = async function () {
   if (!Auth.isAdmin()) return toast('فقط مدیر می‌تواند نمره بدهد', 'error');
   try {
     const today = todayJalali();
-    const personnel = (await DB.getAll('personnel')).filter(p => p.active !== false);
+    const personnel = (await DB.getAll('personnel')).filter(p => p.active !== false && (p.team||'executive')==='executive');
     const prods = await DB.getAll('productions');
     const names = personnel.map(p => p.name).filter(Boolean);
     prods.filter(p => p.date === today).forEach(p => {

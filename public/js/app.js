@@ -9,10 +9,8 @@ const NAV = {
     { id: 'wastes', label: 'ضایعات', icon: '🗑️' },
     { id: 'productions', label: 'تولید روزانه', icon: '🍳' },
     { id: 'materials', label: 'مواد اولیه', icon: '📦' },
-    { id: 'suppliers', label: 'طرف حساب', icon: '🤝' },
     { id: 'products', label: 'محصولات', icon: '🍢' },
-    { id: 'personnel', label: 'پرسنل', icon: '👨‍🍳' },
-    { id: 'league', label: 'لیگ پرسنل', icon: '🏆' },
+    { id: 'personnel', label: 'پرسنل', icon: '👥' },
     { id: 'reports', label: 'گزارش و پشتیبان', icon: '📑' },
     { id: 'audit', label: 'لاگ فعالیت', icon: '📜' },
     { id: 'settings', label: 'تنظیمات', icon: '⚙️' },
@@ -23,15 +21,13 @@ const NAV = {
     { id: 'entries', label: 'ورود مواد', icon: '📥' },
     { id: 'wastes', label: 'ضایعات', icon: '🗑️' },
     { id: 'materials', label: 'موجودی مواد', icon: '📦' },
-    { id: 'suppliers', label: 'طرف حساب', icon: '🤝' },
     { id: 'reports', label: 'گزارش‌ها', icon: '📑' }
   ],
   production: [
     { id: 'dashboard', label: 'داشبورد', icon: '📊' },
     { id: 'productions', label: 'تولید روزانه', icon: '🍳' },
     { id: 'products', label: 'محصولات', icon: '🍢' },
-    { id: 'personnel', label: 'پرسنل', icon: '👨‍🍳' },
-    { id: 'league', label: 'لیگ پرسنل', icon: '🏆' },
+    { id: 'personnel', label: 'پرسنل', icon: '👥' },
     { id: 'materials', label: 'موجودی مواد', icon: '📦' },
     { id: 'reports', label: 'گزارش‌ها', icon: '📑' }
   ]
@@ -43,8 +39,9 @@ function buildNav() {
   const role = Auth.currentUser?.role || 'entry';
   const links = NAV[role] || NAV.entry;
   const el = document.getElementById('nav-links');
+  const activeId = (currentPage === 'attendance' || currentPage === 'league') ? 'personnel' : currentPage;
   el.innerHTML = links.map(l => `
-    <div class="sidebar-link ${currentPage === l.id ? 'active' : ''}" data-page="${l.id}" onclick="navigate('${l.id}')">
+    <div class="sidebar-link ${activeId === l.id ? 'active' : ''}" data-page="${l.id}" onclick="navigate('${l.id}')">
       <span>${l.icon}</span>
       <span>${l.label}</span>
     </div>
