@@ -2,11 +2,11 @@
  * IndexedDB wrapper + seed data for Kitchen Inventory System
  */
 const DB_NAME = 'kitchen_inventory_v1';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let db = null;
 
-const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals'];
+const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines'];
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -212,13 +212,21 @@ async function calcStock() {
   const productions = await getAll('productions');
   const wastes = await getAll('wastes');
   const returns = await getAll('returns');
+  let transferItems = [];
+  try {
+    const transfers = (await getAll('branch_transfers')) || [];
+    const items = (await getAll('branch_transfer_items')) || [];
+    const activeIds = new Set(transfers.filter(t => !t.deleted_at).map(t => t.id));
+    transferItems = items.filter(i => i.item_type === 'material' && activeIds.has(i.transfer_id));
+  } catch (e) { transferItems = []; }
 
   return materials.map(m => {
     const totalIn = entries.filter(e => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0);
     const totalOut = productions.filter(p => p.material_name === m.name).reduce((s, p) => s + Number(p.material_weight || 0), 0);
     const totalWaste = wastes.filter(w => w.material_name === m.name).reduce((s, w) => s + Number(w.quantity || 0), 0);
     const totalReturn = returns.filter(r => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
-    const current = Number(m.initial_stock || 0) + totalIn - totalOut - totalWaste + totalReturn;
+    const totalTransfer = transferItems.filter(i => i.item_name === m.name).reduce((s, i) => s + Number(i.quantity || 0), 0);
+    const current = Number(m.initial_stock || 0) + totalIn - totalOut - totalWaste + totalReturn - totalTransfer;
     const status = current <= 0 ? 'تمام شد' : (current < (m.min_alert || 0) ? 'هشدار' : 'عادی');
     return {
       ...m,
@@ -226,6 +234,7 @@ async function calcStock() {
       total_out: totalOut,
       total_waste: totalWaste,
       total_return: totalReturn,
+      total_transfer: totalTransfer,
       current_stock: Math.round(current * 100) / 100,
       status
     };

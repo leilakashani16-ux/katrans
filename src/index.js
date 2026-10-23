@@ -7,7 +7,7 @@
  * Requires D1 binding named "DB"
  */
 
-const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals']);
+const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines']);
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -435,6 +435,69 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     UNIQUE(date, person_id)
   )`).run();
 
+  await db.prepare(`CREATE TABLE IF NOT EXISTS general_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE,
+    name TEXT NOT NULL,
+    unit TEXT DEFAULT 'عدد',
+    active INTEGER DEFAULT 1,
+    notes TEXT
+  )`).run();
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS branch_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    branch_name TEXT NOT NULL DEFAULT 'گاردنیا',
+    notes TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    deleted_at TEXT
+  )`).run();
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS branch_transfer_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transfer_id INTEGER NOT NULL,
+    item_type TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS stocktakes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    notes TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    deleted_at TEXT
+  )`).run();
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS stocktake_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stocktake_id INTEGER NOT NULL,
+    material_name TEXT NOT NULL,
+    system_qty REAL NOT NULL DEFAULT 0,
+    counted_qty REAL NOT NULL DEFAULT 0,
+    variance REAL NOT NULL DEFAULT 0,
+    notes TEXT
+  )`).run();
+
+  // seed a few general items if empty
+  try {
+    const gc = await db.prepare('SELECT COUNT(*) as c FROM general_items').first();
+    if (!gc || gc.c === 0) {
+      await db.batch([
+        db.prepare("INSERT INTO general_items (code,name,unit,active) VALUES ('G001','نوشابه','بطری',1)"),
+        db.prepare("INSERT INTO general_items (code,name,unit,active) VALUES ('G002','دوغ','بطری',1)"),
+        db.prepare("INSERT INTO general_items (code,name,unit,active) VALUES ('G003','ماست','کیلوگرم',1)"),
+        db.prepare("INSERT INTO general_items (code,name,unit,active) VALUES ('G004','کره فله','کیلوگرم',1)"),
+        db.prepare("INSERT INTO general_items (code,name,unit,active) VALUES ('G005','رب گوجه‌فرنگی','کیلوگرم',1)"),
+      ]);
+    }
+  } catch (e) {}
+
 
 
 
@@ -591,12 +654,21 @@ async function handleApi(request, env) {
       const productions = (await soft('productions')).results || [];
       const wastes = (await soft('wastes')).results || [];
       const returns = (await soft('returns')).results || [];
+      let transferItems = [];
+      try {
+        transferItems = (await env.DB.prepare(
+          `SELECT i.* FROM branch_transfer_items i
+           JOIN branch_transfers t ON t.id = i.transfer_id
+           WHERE (t.deleted_at IS NULL OR t.deleted_at = '') AND i.item_type = 'material'`
+        ).all()).results || [];
+      } catch (e) { transferItems = []; }
       const stock = materials.map((m) => {
         const totalIn = entries.filter((e) => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0);
         const totalOut = productions.filter((p) => p.material_name === m.name).reduce((s, p) => s + Number(p.material_weight || 0), 0);
         const totalWaste = wastes.filter((w) => w.material_name === m.name).reduce((s, w) => s + Number(w.quantity || 0), 0);
         const totalReturn = returns.filter((r) => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
-        const current = Number(m.initial_stock || 0) + totalIn - totalOut - totalWaste + totalReturn;
+        const totalTransfer = transferItems.filter((i) => i.item_name === m.name).reduce((s, i) => s + Number(i.quantity || 0), 0);
+        const current = Number(m.initial_stock || 0) + totalIn - totalOut - totalWaste + totalReturn - totalTransfer;
         const status = current <= 0 ? 'تمام شد' : current < (m.min_alert || 0) ? 'هشدار' : 'عادی';
         return {
           ...m,
@@ -604,6 +676,7 @@ async function handleApi(request, env) {
           total_out: totalOut,
           total_waste: totalWaste,
           total_return: totalReturn,
+          total_transfer: totalTransfer,
           current_stock: Math.round(current * 100) / 100,
           status,
         };
@@ -732,7 +805,7 @@ async function handleApi(request, env) {
 
     if (request.method === 'GET' && !id) {
       // soft-delete: hide deleted rows by default (except audit/users)
-      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers']);
+      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers', 'branch_transfers', 'stocktakes']);
       let rows;
       if (softStores.has(store)) {
         try {
@@ -771,7 +844,7 @@ async function handleApi(request, env) {
       if (store === 'productions' && !['admin', 'production'].includes(user.role)) {
         return json({ error: 'forbidden' }, 403);
       }
-      if (['materials', 'products', 'personnel', 'daily_plans', 'staff_scores', 'daily_staff_menu', 'attendance_meals'].includes(store) && user.role !== 'admin') {
+      if (['materials', 'products', 'personnel', 'daily_plans', 'staff_scores', 'daily_staff_menu', 'attendance_meals', 'general_items', 'stocktakes', 'stocktake_lines'].includes(store) && user.role !== 'admin') {
         return json({ error: 'admin only' }, 403);
       }
 
@@ -966,7 +1039,7 @@ const keys = Object.keys(body).filter((k) => body[k] !== undefined);
         console.error('audit log failed', e);
       }
       // soft delete when column exists; hard delete for users / fallback
-      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers']);
+      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers', 'branch_transfers', 'stocktakes']);
       if (softStores.has(store)) {
         try {
           await env.DB.prepare(

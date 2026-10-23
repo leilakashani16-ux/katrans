@@ -1499,6 +1499,8 @@ Pages.reports = async function () {
         <button class="btn-secondary w-full" onclick="Pages.exportStock()">📥 گزارش موجودی تفصیلی</button>
         <button class="btn-secondary w-full" onclick="Pages.staffReportPrompt()">👤 گزارش کار یک پرسنل</button>
         <button class="btn-secondary w-full" onclick="Pages.staffMealReportForm()">🍽️ گزارش حضور و غذای پرسنلی</button>
+        <button class="btn-secondary w-full" onclick="Pages.transferReportForm()">🚚 گزارش ارسال شعبه</button>
+        <button class="btn-secondary w-full" onclick="navigate('stocktake')">📋 انبارگردانی</button>
         <button class="btn-primary w-full" onclick="Pages.materialPeriodForm()">📦 گزارش بازه ماده (ورود تا اتمام)</button>
       </div>
       <div class="glass-card rounded-2xl p-6 space-y-3">
@@ -2152,6 +2154,11 @@ Pages.settings = async function () {
         </label>
         <button type="submit" class="btn-primary w-full">ذخیره تنظیمات</button>
       </form>
+    </div>
+    <div class="glass-card rounded-2xl p-6 max-w-lg mt-4">
+      <h2 class="font-semibold mb-2">اقلام عمومی (ارسال شعبه)</h2>
+      <p class="text-sm text-slate-400 mb-3">نوشابه، دوغ، ماست، کره، رب و… برای ارسال به گاردنیا</p>
+      <button class="btn-secondary w-full" onclick="Pages.manageGeneralItems()">🧃 مدیریت اقلام عمومی</button>
     </div>
     <div class="glass-card rounded-2xl p-6 max-w-lg mt-4">
       <h2 class="font-semibold mb-2">طرف حساب</h2>
