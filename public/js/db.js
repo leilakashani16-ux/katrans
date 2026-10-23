@@ -37,7 +37,7 @@ async function getAll(store) {
   return new Promise((res, rej) => {
     const r = tx(store).getAll();
     r.onsuccess = () => {
-      const soft = ['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers'];
+      const soft = ['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers', 'branch_transfers', 'stocktakes', 'general_items'];
       let rows = r.result || [];
       if (soft.includes(store)) {
         rows = rows.filter(x => !x.deleted_at);
@@ -74,7 +74,7 @@ async function put(store, item) {
 
 async function remove(store, id) {
   // soft delete for main data stores; hard delete for users/settings
-  const soft = ['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers'];
+  const soft = ['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers', 'branch_transfers', 'stocktakes', 'general_items'];
   if (soft.includes(store)) {
     return new Promise(async (res, rej) => {
       try {

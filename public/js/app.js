@@ -251,6 +251,10 @@ async function softRefreshIfNeeded() {
   if (!window.__cloudMode) return;
   if (document.visibilityState !== 'visible') return;
   if (isModalOpen()) return;
+  // وسط فرم / کیبورد موبایل رفرش نکن
+  if (window.__formBusy) return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA')) return;
   if (!Auth.currentUser) return;
   try {
     if (window.Api) {

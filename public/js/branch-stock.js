@@ -126,21 +126,22 @@
       .join('');
 
     showModal(
-      '<div class="modal" style="max-width:640px"><h3 class="text-lg font-bold mb-3">ثبت ارسال به شعبه</h3>' +
-        '<form id="transfer-form" class="space-y-3">' +
+      '<div class="modal" style="max-width:640px" onclick="event.stopPropagation()"><h3 class="text-lg font-bold mb-3">ثبت ارسال به شعبه</h3>' +
+        '<form id="transfer-form" class="space-y-3" onsubmit="return false;">' +
         '<div class="grid grid-cols-2 gap-2">' +
         '<div><label class="text-xs text-slate-400">تاریخ</label><input name="date" class="input-field" value="' +
         todayJalali() +
-        '" required /></div>' +
+        '" required inputmode="text" autocomplete="off" /></div>' +
         '<div><label class="text-xs text-slate-400">شعبه</label><input name="branch_name" class="input-field" value="' +
         BRANCH_DEFAULT +
-        '" required /></div></div>' +
-        '<div><label class="text-xs text-slate-400">توضیح ارسال</label><input name="notes" class="input-field" placeholder="راننده، شماره فاکتور..." /></div>' +
+        '" required autocomplete="off" /></div></div>' +
+        '<div><label class="text-xs text-slate-400">توضیح ارسال</label><input name="notes" class="input-field" placeholder="راننده، شماره فاکتور..." autocomplete="off" /></div>' +
         '<div class="border border-slate-600/40 rounded-xl p-3 space-y-2">' +
-        '<div class="text-sm font-medium mb-1">اقلام</div>' +
-        '<div id="tf-rows" class="space-y-2"></div>' +
-        '<button type="button" class="btn-ghost text-sm" onclick="Pages.addTransferRow()">+ ردیف</button></div>' +
-        '<div class="flex gap-2 pt-2"><button type="submit" class="btn-primary flex-1">ذخیره ارسال</button>' +
+        '<div class="flex items-center justify-between mb-1"><span class="text-sm font-medium">اقلام</span>' +
+        '<button type="button" class="btn-ghost text-xs" onclick="Pages.addTransferRow(); setTimeout(function(){var b=document.getElementById(\'tf-rows\'); if(b) b.scrollTop=b.scrollHeight;},50)">+ ردیف</button></div>' +
+        '<div id="tf-rows" class="tf-rows-scroll space-y-2"></div></div>' +
+        '<div class="modal-sticky-actions flex gap-2">' +
+        '<button type="submit" class="btn-primary flex-1">💾 ذخیره ارسال</button>' +
         '<button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button></div></form></div>'
     );
 
@@ -150,6 +151,8 @@
 
     document.getElementById('transfer-form').onsubmit = async function (ev) {
       ev.preventDefault();
+      ev.stopPropagation();
+      window.__formBusy = true;
       const btn = ev.target.querySelector('button[type="submit"]');
       if (btn) {
         btn.disabled = true;
@@ -196,13 +199,15 @@
         }
         toast('ارسال ثبت شد (' + rows.length + ' قلم)', 'success');
         closeModal();
+        window.__formBusy = false;
         navigate('transfers');
       } catch (e) {
         console.error(e);
         toast(e.message || 'خطا در ذخیره', 'error');
+        window.__formBusy = false;
         if (btn) {
           btn.disabled = false;
-          btn.textContent = 'ذخیره ارسال';
+          btn.textContent = '💾 ذخیره ارسال';
         }
       }
     };
@@ -213,19 +218,20 @@
     if (!box) return;
     const opts = window.__tfOpts || { mat: '', prod: '', gen: '' };
     const div = document.createElement('div');
-    div.className = 'tf-row grid grid-cols-2 sm:grid-cols-5 gap-2 items-end';
+    div.className = 'tf-row border border-slate-600/30 rounded-lg p-2 space-y-2';
     div.innerHTML =
-      '<div><label class="text-[10px] text-slate-500">نوع</label>' +
-      '<select data-f="type" class="input-field text-sm" onchange="Pages.onTfTypeChange(this)">' +
-      '<option value="material">ماده</option><option value="product">محصول</option><option value="general">عمومی</option></select></div>' +
-      '<div class="sm:col-span-2"><label class="text-[10px] text-slate-500">نام</label>' +
-      '<select data-f="name" class="input-field text-sm">' +
-      opts.mat +
-      '</select>' +
-      '<input data-f="name_custom" class="input-field text-sm mt-1 hidden" placeholder="نام اقلام عمومی (دستی)" /></div>' +
-      '<div><label class="text-[10px] text-slate-500">مقدار</label><input data-f="qty" type="number" step="0.01" min="0" class="input-field text-sm" /></div>' +
-      '<div><label class="text-[10px] text-slate-500">واحد</label><input data-f="unit" class="input-field text-sm" placeholder="کیلو/عدد" /></div>';
+      '<div class="flex items-center justify-between gap-2">' +
+      '<select data-f="type" class="input-field text-sm flex-1" onchange="Pages.onTfTypeChange(this)">' +
+      '<option value="material">ماده اولیه</option><option value="product">محصول</option><option value="general">اقلام عمومی</option></select>' +
+      '<button type="button" class="btn-ghost text-xs text-red-400 px-2" onclick="this.closest(\'.tf-row\').remove()">حذف</button></div>' +
+      '<div><label class="text-[10px] text-slate-500">نام</label>' +
+      '<select data-f="name" class="input-field text-sm">' + opts.mat + '</select>' +
+      '<input data-f="name_custom" class="input-field text-sm mt-1 hidden" placeholder="نام دستی اقلام عمومی" autocomplete="off" /></div>' +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<div><label class="text-[10px] text-slate-500">مقدار</label><input data-f="qty" type="number" step="0.01" min="0" inputmode="decimal" class="input-field text-sm" /></div>' +
+      '<div><label class="text-[10px] text-slate-500">واحد</label><input data-f="unit" class="input-field text-sm" placeholder="کیلو/عدد" autocomplete="off" /></div></div>';
     box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
   };
 
   Pages.onTfTypeChange = function (sel) {
@@ -678,24 +684,34 @@
     if (!Auth.isAdmin()) return toast('فقط مدیر', 'error');
     let list = [];
     try { list = (await DB.getAll('general_items')) || []; } catch (e) { list = []; }
+    list = list.filter(function (g) { return !g.deleted_at && g.active !== 0 && g.active !== false; });
+    var rows = list.map(function (g) {
+      var safe = String(g.name || '').replace(/'/g, '');
+      return '<tr><td class="text-xs">' + (g.code || '') + '</td><td>' + g.name + '</td><td>' + (g.unit || '') +
+        '</td><td class="whitespace-nowrap">' +
+        '<button type="button" class="btn-ghost text-xs" onclick="Pages.editGeneralItem(' + g.id + ')">ویرایش</button> ' +
+        '<button type="button" class="btn-ghost text-xs text-red-400" onclick="Pages.deleteGeneralItem(' + g.id + ')">حذف</button>' +
+        '</td></tr>';
+    }).join('');
     showModal(
-      '<div class="modal" style="max-width:520px"><h3 class="text-lg font-bold mb-3">اقلام عمومی</h3>' +
-      '<div class="table-wrap max-h-48 overflow-y-auto mb-3"><table class="data"><thead><tr><th>کد</th><th>نام</th><th>واحد</th></tr></thead><tbody>' +
-      (list.map(function (g) {
-        return '<tr><td class="text-xs">' + (g.code || '') + '</td><td>' + g.name + '</td><td>' + (g.unit || '') + '</td></tr>';
-      }).join('') || '<tr><td colspan="3" class="text-center text-slate-500">خالی</td></tr>') +
+      '<div class="modal" style="max-width:520px" onclick="event.stopPropagation()"><h3 class="text-lg font-bold mb-3">اقلام عمومی</h3>' +
+      '<div class="table-wrap max-h-56 overflow-y-auto mb-3"><table class="data"><thead><tr><th>کد</th><th>نام</th><th>واحد</th><th></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="4" class="text-center text-slate-500">خالی</td></tr>') +
       '</tbody></table></div>' +
       '<form id="gi-form" class="space-y-2 border-t border-slate-600/40 pt-3">' +
+      '<div class="text-xs text-slate-400 mb-1">افزودن قلم جدید</div>' +
       '<div class="grid grid-cols-3 gap-2">' +
-      '<input name="code" class="input-field text-sm" placeholder="کد" />' +
-      '<input name="name" class="input-field text-sm" placeholder="نام" required />' +
-      '<input name="unit" class="input-field text-sm" placeholder="واحد" value="عدد" /></div>' +
-      '<button type="submit" class="btn-primary w-full text-sm">+ افزودن</button></form>' +
-      '<button class="btn-ghost w-full mt-2" onclick="closeModal()">بستن</button></div>'
+      '<input name="code" class="input-field text-sm" placeholder="کد" autocomplete="off" />' +
+      '<input name="name" class="input-field text-sm" placeholder="نام" required autocomplete="off" />' +
+      '<input name="unit" class="input-field text-sm" placeholder="واحد" value="عدد" autocomplete="off" /></div>' +
+      '<div class="modal-sticky-actions flex gap-2">' +
+      '<button type="submit" class="btn-primary flex-1 text-sm">+ افزودن</button>' +
+      '<button type="button" class="btn-secondary text-sm" onclick="closeModal()">بستن</button></div></form></div>'
     );
     document.getElementById('gi-form').onsubmit = async function (ev) {
       ev.preventDefault();
-      const data = Object.fromEntries(new FormData(ev.target).entries());
+      ev.stopPropagation();
+      var data = Object.fromEntries(new FormData(ev.target).entries());
       data.active = 1;
       try {
         await DB.add('general_items', data);
@@ -704,6 +720,43 @@
         Pages.manageGeneralItems();
       } catch (e) { toast(e.message || 'خطا', 'error'); }
     };
+  };
+
+  Pages.editGeneralItem = async function (id) {
+    if (!Auth.isAdmin()) return;
+    var g = await DB.getById('general_items', id);
+    if (!g) return toast('یافت نشد', 'error');
+    showModal(
+      '<div class="modal" onclick="event.stopPropagation()"><h3 class="text-lg font-bold mb-3">ویرایش اقلام عمومی</h3>' +
+      '<form id="gi-edit" class="space-y-3">' +
+      '<div><label class="text-xs text-slate-400">کد</label><input name="code" class="input-field" value="' + (g.code || '') + '" /></div>' +
+      '<div><label class="text-xs text-slate-400">نام</label><input name="name" class="input-field" value="' + (g.name || '') + '" required /></div>' +
+      '<div><label class="text-xs text-slate-400">واحد</label><input name="unit" class="input-field" value="' + (g.unit || '') + '" /></div>' +
+      '<div class="modal-sticky-actions flex gap-2">' +
+      '<button type="submit" class="btn-primary flex-1">ذخیره</button>' +
+      '<button type="button" class="btn-secondary" onclick="Pages.manageGeneralItems()">بازگشت</button></div></form></div>'
+    );
+    document.getElementById('gi-edit').onsubmit = async function (ev) {
+      ev.preventDefault();
+      var data = Object.fromEntries(new FormData(ev.target).entries());
+      try {
+        Object.assign(g, data);
+        g.active = 1;
+        await DB.put('general_items', g);
+        toast('ذخیره شد', 'success');
+        Pages.manageGeneralItems();
+      } catch (e) { toast(e.message || 'خطا', 'error'); }
+    };
+  };
+
+  Pages.deleteGeneralItem = async function (id) {
+    if (!Auth.isAdmin()) return;
+    if (!confirmAction('این قلم حذف شود؟')) return;
+    try {
+      await DB.remove('general_items', id);
+      toast('حذف شد', 'success');
+      Pages.manageGeneralItems();
+    } catch (e) { toast(e.message || 'خطا', 'error'); }
   };
 
   Pages.exportStocktakeExcel = async function (id) {

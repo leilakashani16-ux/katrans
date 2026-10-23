@@ -404,6 +404,7 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
   // پرسنل: تیم + نوع شیفت (برای غذای پرسنلی و تقویم آینده)
   await ensureColumn(db, 'personnel', 'team', "TEXT DEFAULT 'executive'");
   await ensureColumn(db, 'personnel', 'shift_type', "TEXT DEFAULT 'full'");
+  await ensureColumn(db, 'general_items', 'deleted_at', 'TEXT');
   try {
     await db.prepare("UPDATE personnel SET team = 'executive' WHERE team IS NULL OR team = ''").run();
     await db.prepare("UPDATE personnel SET shift_type = 'full' WHERE shift_type IS NULL OR shift_type = ''").run();
@@ -805,7 +806,7 @@ async function handleApi(request, env) {
 
     if (request.method === 'GET' && !id) {
       // soft-delete: hide deleted rows by default (except audit/users)
-      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers', 'branch_transfers', 'stocktakes']);
+      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers', 'branch_transfers', 'stocktakes', 'general_items']);
       let rows;
       if (softStores.has(store)) {
         try {
@@ -1039,7 +1040,7 @@ const keys = Object.keys(body).filter((k) => body[k] !== undefined);
         console.error('audit log failed', e);
       }
       // soft delete when column exists; hard delete for users / fallback
-      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers', 'branch_transfers', 'stocktakes']);
+      const softStores = new Set(['entries', 'wastes', 'productions', 'returns', 'materials', 'products', 'personnel', 'suppliers', 'branch_transfers', 'stocktakes', 'general_items']);
       if (softStores.has(store)) {
         try {
           await env.DB.prepare(
