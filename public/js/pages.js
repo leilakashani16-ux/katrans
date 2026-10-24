@@ -1499,7 +1499,9 @@ Pages.reports = async function () {
         <button class="btn-secondary w-full" onclick="Pages.exportStock()">📥 گزارش موجودی تفصیلی</button>
         <button class="btn-secondary w-full" onclick="Pages.staffReportPrompt()">👤 گزارش کار یک پرسنل</button>
         <button class="btn-secondary w-full" onclick="Pages.staffMealReportForm()">🍽️ گزارش حضور و غذای پرسنلی</button>
+        <button class="btn-secondary w-full" onclick="Pages.staffMealWhatsApp()">📱 واتساپ حضور و غذا (امروز)</button>
         <button class="btn-secondary w-full" onclick="Pages.transferReportForm()">🚚 گزارش ارسال شعبه</button>
+        <button class="btn-secondary w-full" onclick="Pages.transferWhatsApp()">📱 واتساپ ارسال شعبه (امروز)</button>
         <button class="btn-secondary w-full" onclick="navigate('stocktake')">📋 انبارگردانی</button>
         <button class="btn-primary w-full" onclick="Pages.materialPeriodForm()">📦 گزارش بازه ماده (ورود تا اتمام)</button>
       </div>

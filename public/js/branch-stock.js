@@ -5,6 +5,44 @@
   const BRANCH_DEFAULT = 'گاردنیا';
   const TYPE_LABELS = { material: 'ماده اولیه', product: 'محصول', general: 'اقلام عمومی' };
 
+  Pages.showWhatsAppModal = function (title, text, opts) {
+    opts = opts || {};
+    showModal(
+      '<div class="modal max-w-lg" onclick="event.stopPropagation()">' +
+        '<h3 class="text-lg font-bold mb-2">📱 ' + title + '</h3>' +
+        (opts.subtitle ? '<p class="text-xs text-slate-400 mb-2">' + opts.subtitle + '</p>' : '<p class="text-xs text-slate-400 mb-2">کپی کن و تو گروه واتساپ بذار</p>') +
+        '<textarea id="wa-share-text" class="input-field font-mono text-xs h-64" readonly></textarea>' +
+        '<div class="modal-sticky-actions flex gap-2">' +
+        '<button type="button" class="btn-primary flex-1" id="btn-wa-copy">📋 کپی متن</button>' +
+        '<button type="button" class="btn-secondary" id="btn-wa-share">اشتراک</button>' +
+        '<button type="button" class="btn-ghost" onclick="closeModal()">بستن</button></div></div>'
+    );
+    var ta = document.getElementById('wa-share-text');
+    if (ta) ta.value = text || '';
+    document.getElementById('btn-wa-copy').onclick = async function () {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('کپی شد — برو تو واتساپ پیست کن', 'success');
+      } catch (err) {
+        if (ta) { ta.focus(); ta.select(); }
+        toast('متن را نگه دار و کپی کن', 'info');
+      }
+    };
+    document.getElementById('btn-wa-share').onclick = async function () {
+      if (navigator.share) {
+        try { await navigator.share({ text: text }); } catch (e) {
+          if (e && e.name !== 'AbortError') toast('اشتراک ناموفق', 'error');
+        }
+      } else {
+        try {
+          await navigator.clipboard.writeText(text);
+          toast('کپی شد — واتساپ را باز کن', 'success');
+        } catch (_) { if (ta) { ta.focus(); ta.select(); } }
+      }
+    };
+  };
+
+
   Pages.transfers = async function () {
     const canEdit = Auth.isAdmin() || (Auth.canEntry && Auth.canEntry());
     let transfers = [];
@@ -91,107 +129,108 @@
     );
   };
 
+
   Pages.showTransferForm = async function () {
     if (!(Auth.isAdmin() || (Auth.canEntry && Auth.canEntry()))) return toast('دسترسی ندارید', 'error');
-    const [materials, products, generals] = await Promise.all([
-      DB.getAll('materials').catch(function () {
-        return [];
-      }),
-      DB.getAll('products').catch(function () {
-        return [];
-      }),
-      DB.getAll('general_items').catch(function () {
-        return [];
-      })
+    const [materials, products, generals, transfers] = await Promise.all([
+      DB.getAll('materials').catch(function () { return []; }),
+      DB.getAll('products').catch(function () { return []; }),
+      DB.getAll('general_items').catch(function () { return []; }),
+      DB.getAll('branch_transfers').catch(function () { return []; })
     ]);
-    const matOpts = (materials || [])
-      .filter(function (m) {
-        return m.active !== false && m.active !== 0;
-      })
-      .map(function (m) {
-        return '<option value="' + m.name + '">' + m.name + '</option>';
-      })
-      .join('');
-    const prodOpts = (products || [])
-      .filter(function (m) {
-        return m.active !== false && m.active !== 0;
-      })
-      .map(function (m) {
-        return '<option value="' + m.name + '">' + m.name + '</option>';
-      })
-      .join('');
-    const genOpts = (generals || [])
-      .filter(function (m) {
-        return m.active !== false && m.active !== 0;
-      })
-      .map(function (m) {
-        return '<option value="' + m.name + '">' + m.name + ' (' + (m.unit || '') + ')</option>';
-      })
-      .join('');
+
+    function activeList(arr) {
+      return (arr || []).filter(function (m) { return m.active !== false && m.active !== 0 && !m.deleted_at; });
+    }
+    var mats = activeList(materials);
+    var prods = activeList(products);
+    var gens = activeList(generals);
+
+    window.__tfMeta = {
+      material: {},
+      product: {},
+      general: {}
+    };
+    mats.forEach(function (m) { window.__tfMeta.material[m.name] = m.unit || 'کیلوگرم'; });
+    prods.forEach(function (m) { window.__tfMeta.product[m.name] = 'عدد'; });
+    gens.forEach(function (m) { window.__tfMeta.general[m.name] = m.unit || 'عدد'; });
+
+    var matOpts = mats.map(function (m) {
+      return '<option value="' + m.name + '" data-unit="' + (m.unit || 'کیلوگرم') + '">' + m.name + '</option>';
+    }).join('');
+    var prodOpts = prods.map(function (m) {
+      return '<option value="' + m.name + '" data-unit="عدد">' + m.name + '</option>';
+    }).join('');
+    var genOpts = gens.map(function (m) {
+      return '<option value="' + m.name + '" data-unit="' + (m.unit || 'عدد') + '">' + m.name + '</option>';
+    }).join('');
+
+    var quickGens = gens.slice(0, 8).map(function (g) {
+      return '<button type="button" class="text-xs px-2 py-1 rounded-full border border-amber-600/40 text-amber-200/90 bg-amber-500/10" onclick="Pages.quickAddGeneral(\'' +
+        String(g.name).replace(/'/g, '') + '\',\'' + String(g.unit || 'عدد').replace(/'/g, '') + '\')">' + g.name + '</button>';
+    }).join('');
+
+    var lastT = ((transfers || []).filter(function (t) { return !t.deleted_at; })
+      .sort(function (a, b) { return (b.id || 0) - (a.id || 0); })[0]) || null;
 
     showModal(
-      '<div class="modal" style="max-width:640px" onclick="event.stopPropagation()"><h3 class="text-lg font-bold mb-3">ثبت ارسال به شعبه</h3>' +
+      '<div class="modal" style="max-width:640px" onclick="event.stopPropagation()">' +
+        '<div class="flex items-center gap-3 mb-3">' +
+        '<img src="logo-gardenia.png" alt="" class="w-11 h-11 rounded-full object-cover border border-amber-600/50" />' +
+        '<div><h3 class="text-lg font-bold leading-tight">ثبت ارسال به شعبه</h3>' +
+        '<p class="text-[11px] text-slate-400">گاردنیا · ماده / محصول / اقلام عمومی</p></div></div>' +
         '<form id="transfer-form" class="space-y-3" onsubmit="return false;">' +
         '<div class="grid grid-cols-2 gap-2">' +
-        '<div><label class="text-xs text-slate-400">تاریخ</label><input name="date" class="input-field" value="' +
-        todayJalali() +
-        '" required inputmode="text" autocomplete="off" /></div>' +
-        '<div><label class="text-xs text-slate-400">شعبه</label><input name="branch_name" class="input-field" value="' +
-        BRANCH_DEFAULT +
-        '" required autocomplete="off" /></div></div>' +
-        '<div><label class="text-xs text-slate-400">توضیح ارسال</label><input name="notes" class="input-field" placeholder="راننده، شماره فاکتور..." autocomplete="off" /></div>' +
-        '<div class="border border-slate-600/40 rounded-xl p-3 space-y-2">' +
-        '<div class="flex items-center justify-between mb-1"><span class="text-sm font-medium">اقلام</span>' +
-        '<button type="button" class="btn-ghost text-xs" onclick="Pages.addTransferRow(); setTimeout(function(){var b=document.getElementById(\'tf-rows\'); if(b) b.scrollTop=b.scrollHeight;},50)">+ ردیف</button></div>' +
-        '<div id="tf-rows" class="tf-rows-scroll space-y-2"></div></div>' +
-        '<div class="modal-sticky-actions flex gap-2">' +
+        '<div><label class="text-xs text-slate-400">تاریخ</label><input name="date" class="input-field" value="' + todayJalali() + '" required autocomplete="off" /></div>' +
+        '<div><label class="text-xs text-slate-400">شعبه</label><input name="branch_name" class="input-field" value="' + BRANCH_DEFAULT + '" required autocomplete="off" /></div></div>' +
+        '<div><label class="text-xs text-slate-400">توضیح (راننده / فاکتور)</label><input name="notes" class="input-field" placeholder="اختیاری" autocomplete="off" /></div>' +
+        (quickGens
+          ? '<div><div class="text-[10px] text-slate-500 mb-1">افزودن سریع اقلام عمومی</div><div class="flex flex-wrap gap-1.5">' + quickGens + '</div></div>'
+          : '') +
+        '<div class="border border-slate-600/40 rounded-xl p-3 space-y-2 bg-slate-900/20">' +
+        '<div class="flex items-center justify-between gap-2">' +
+        '<span class="text-sm font-medium">لیست اقلام <span id="tf-count" class="text-xs text-slate-500">(0)</span></span>' +
+        '<div class="flex gap-1">' +
+        (lastT ? '<button type="button" class="btn-ghost text-[11px]" onclick="Pages.copyLastTransfer(' + lastT.id + ')">کپی آخرین ارسال</button>' : '') +
+        '<button type="button" class="btn-secondary text-xs" onclick="Pages.addTransferRow(); Pages.refreshTfSummary();">+ ردیف</button></div></div>' +
+        '<div id="tf-rows" class="tf-rows-scroll space-y-2"></div>' +
+        '<div id="tf-summary" class="text-[11px] text-slate-400 border-t border-slate-600/30 pt-2 mt-1">هنوز قلمی نیست</div></div>' +
+        '<div class="modal-sticky-actions space-y-2">' +
+        '<label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">' +
+        '<input type="checkbox" id="tf-open-wa" class="rounded" checked /> بعد از ذخیره، خروجی واتساپ باز شود</label>' +
+        '<div class="flex gap-2">' +
         '<button type="submit" class="btn-primary flex-1">💾 ذخیره ارسال</button>' +
-        '<button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button></div></form></div>'
+        '<button type="button" class="btn-secondary" onclick="closeModal()">انصراف</button></div></div></form></div>'
     );
 
     window.__tfOpts = { mat: matOpts, prod: prodOpts, gen: genOpts };
     Pages.addTransferRow();
-    Pages.addTransferRow();
+    Pages.refreshTfSummary();
 
     document.getElementById('transfer-form').onsubmit = async function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
       window.__formBusy = true;
-      const btn = ev.target.querySelector('button[type="submit"]');
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = 'در حال ذخیره...';
-      }
+      var btn = ev.target.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.textContent = 'در حال ذخیره...'; }
       try {
-        const fd = Object.fromEntries(new FormData(ev.target).entries());
-        const rows = [];
-        document.querySelectorAll('#tf-rows .tf-row').forEach(function (row) {
-          const type = row.querySelector('[data-f="type"]').value;
-          let name = row.querySelector('[data-f="name"]').value.trim();
-          if (type === 'general' && row.querySelector('[data-f="name_custom"]').value.trim()) {
-            name = row.querySelector('[data-f="name_custom"]').value.trim();
-          }
-          const qty = Number(row.querySelector('[data-f="qty"]').value);
-          const unit = row.querySelector('[data-f="unit"]').value.trim();
-          if (name && qty > 0) rows.push({ item_type: type, item_name: name, quantity: qty, unit: unit });
-        });
+        var fd = Object.fromEntries(new FormData(ev.target).entries());
+        var rows = Pages.collectTransferRows();
         if (!rows.length) {
           toast('حداقل یک قلم با مقدار وارد کنید', 'error');
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = 'ذخیره ارسال';
-          }
+          window.__formBusy = false;
+          if (btn) { btn.disabled = false; btn.textContent = '💾 ذخیره ارسال'; }
           return;
         }
-        const header = {
+        var header = {
           date: fd.date,
           branch_name: fd.branch_name || BRANCH_DEFAULT,
           notes: fd.notes || '',
           created_by: (Auth.currentUser && (Auth.currentUser.full_name || Auth.currentUser.username)) || '',
           created_at: new Date().toISOString()
         };
-        const tid = await DB.add('branch_transfers', header);
-        for (let i = 0; i < rows.length; i++) {
+        var tid = await DB.add('branch_transfers', header);
+        for (var i = 0; i < rows.length; i++) {
           await DB.add('branch_transfer_items', {
             transfer_id: tid,
             item_type: rows[i].item_type,
@@ -201,56 +240,163 @@
             created_at: new Date().toISOString()
           });
         }
+        var openWa = document.getElementById('tf-open-wa') && document.getElementById('tf-open-wa').checked;
         toast('ارسال ثبت شد (' + rows.length + ' قلم)', 'success');
         closeModal();
         window.__formBusy = false;
-        navigate('transfers');
+        if (openWa) {
+          await Pages.transferWhatsApp(header.date);
+        } else {
+          navigate('transfers');
+        }
       } catch (e) {
         console.error(e);
         toast(e.message || 'خطا در ذخیره', 'error');
         window.__formBusy = false;
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = '💾 ذخیره ارسال';
-        }
+        if (btn) { btn.disabled = false; btn.textContent = '💾 ذخیره ارسال'; }
       }
     };
   };
 
-  Pages.addTransferRow = function () {
-    const box = document.getElementById('tf-rows');
+  Pages.collectTransferRows = function () {
+    var rows = [];
+    document.querySelectorAll('#tf-rows .tf-row').forEach(function (row) {
+      var type = row.querySelector('[data-f="type"]').value;
+      var name = (row.querySelector('[data-f="name"]').value || '').trim();
+      var customEl = row.querySelector('[data-f="name_custom"]');
+      if (type === 'general' && customEl && customEl.value.trim()) name = customEl.value.trim();
+      var qty = Number(row.querySelector('[data-f="qty"]').value);
+      var unit = (row.querySelector('[data-f="unit"]').value || '').trim();
+      if (name && qty > 0) rows.push({ item_type: type, item_name: name, quantity: qty, unit: unit });
+    });
+    return rows;
+  };
+
+  Pages.refreshTfSummary = function () {
+    var rows = Pages.collectTransferRows();
+    var el = document.getElementById('tf-summary');
+    var cnt = document.getElementById('tf-count');
+    if (cnt) cnt.textContent = '(' + rows.length + ')';
+    if (!el) return;
+    if (!rows.length) {
+      el.textContent = 'هنوز قلمی با مقدار معتبر نیست';
+      return;
+    }
+    el.innerHTML = rows.map(function (r, i) {
+      return (i + 1) + ') ' + r.item_name + ' <b class="text-slate-200">' + r.quantity + '</b> ' + (r.unit || '');
+    }).join(' · ');
+  };
+
+  Pages.quickAddGeneral = function (name, unit) {
+    Pages.addTransferRow('general', name, unit);
+    var box = document.getElementById('tf-rows');
+    if (box) {
+      var last = box.querySelector('.tf-row:last-child');
+      if (last) {
+        var qty = last.querySelector('[data-f="qty"]');
+        if (qty) { qty.focus(); qty.select && qty.select(); }
+      }
+    }
+    Pages.refreshTfSummary();
+  };
+
+  Pages.copyLastTransfer = async function (tid) {
+    try {
+      var items = ((await DB.getAll('branch_transfer_items').catch(function () { return []; })) || []).filter(function (i) {
+        return Number(i.transfer_id) === Number(tid);
+      });
+      if (!items.length) return toast('آخرین ارسال قلمی ندارد', 'info');
+      var box = document.getElementById('tf-rows');
+      if (box) box.innerHTML = '';
+      items.forEach(function (i) {
+        Pages.addTransferRow(i.item_type, i.item_name, i.unit, i.quantity);
+      });
+      Pages.refreshTfSummary();
+      toast('اقلام آخرین ارسال بارگذاری شد — مقدارها را بررسی کن', 'success');
+    } catch (e) {
+      toast(e.message || 'خطا', 'error');
+    }
+  };
+
+  Pages.addTransferRow = function (presetType, presetName, presetUnit, presetQty) {
+    var box = document.getElementById('tf-rows');
     if (!box) return;
-    const opts = window.__tfOpts || { mat: '', prod: '', gen: '' };
-    const div = document.createElement('div');
-    div.className = 'tf-row border border-slate-600/30 rounded-lg p-2 space-y-2';
+    var opts = window.__tfOpts || { mat: '', prod: '', gen: '' };
+    var type = presetType || 'material';
+    var div = document.createElement('div');
+    div.className = 'tf-row border border-slate-600/30 rounded-xl p-2.5 space-y-2 bg-slate-950/30';
+    var nameOpts = type === 'product' ? opts.prod : type === 'general' ? opts.gen : opts.mat;
     div.innerHTML =
       '<div class="flex items-center justify-between gap-2">' +
-      '<select data-f="type" class="input-field text-sm flex-1" onchange="Pages.onTfTypeChange(this)">' +
-      '<option value="material">ماده اولیه</option><option value="product">محصول</option><option value="general">اقلام عمومی</option></select>' +
-      '<button type="button" class="btn-ghost text-xs text-red-400 px-2" onclick="this.closest(\'.tf-row\').remove()">حذف</button></div>' +
+      '<select data-f="type" class="input-field text-sm flex-1">' +
+      '<option value="material"' + (type === 'material' ? ' selected' : '') + '>ماده اولیه</option>' +
+      '<option value="product"' + (type === 'product' ? ' selected' : '') + '>محصول</option>' +
+      '<option value="general"' + (type === 'general' ? ' selected' : '') + '>اقلام عمومی</option></select>' +
+      '<button type="button" class="btn-ghost text-xs text-red-400 px-2" title="حذف ردیف">✕</button></div>' +
       '<div><label class="text-[10px] text-slate-500">نام</label>' +
-      '<select data-f="name" class="input-field text-sm">' + opts.mat + '</select>' +
-      '<input data-f="name_custom" class="input-field text-sm mt-1 hidden" placeholder="نام دستی اقلام عمومی" autocomplete="off" /></div>' +
+      '<select data-f="name" class="input-field text-sm">' + nameOpts + '</select>' +
+      '<input data-f="name_custom" class="input-field text-sm mt-1' + (type === 'general' ? '' : ' hidden') + '" placeholder="نام دستی (اگر در لیست نیست)" autocomplete="off" /></div>' +
       '<div class="grid grid-cols-2 gap-2">' +
-      '<div><label class="text-[10px] text-slate-500">مقدار</label><input data-f="qty" type="number" step="0.01" min="0" inputmode="decimal" class="input-field text-sm" /></div>' +
-      '<div><label class="text-[10px] text-slate-500">واحد</label><input data-f="unit" class="input-field text-sm" placeholder="کیلو/عدد" autocomplete="off" /></div></div>';
+      '<div><label class="text-[10px] text-slate-500">مقدار</label><input data-f="qty" type="number" step="0.01" min="0" inputmode="decimal" class="input-field text-sm" value="' + (presetQty != null ? presetQty : '') + '" /></div>' +
+      '<div><label class="text-[10px] text-slate-500">واحد</label><input data-f="unit" class="input-field text-sm" placeholder="کیلو / عدد" autocomplete="off" value="' + (presetUnit || '') + '" /></div></div>';
+
     box.appendChild(div);
+    var typeSel = div.querySelector('[data-f="type"]');
+    var nameSel = div.querySelector('[data-f="name"]');
+    var unitInp = div.querySelector('[data-f="unit"]');
+    var qtyInp = div.querySelector('[data-f="qty"]');
+    var delBtn = div.querySelector('button.btn-ghost');
+
+    function applyUnit() {
+      var t = typeSel.value;
+      var n = nameSel.value;
+      var meta = (window.__tfMeta && window.__tfMeta[t]) || {};
+      if (meta[n]) unitInp.value = meta[n];
+      else {
+        var opt = nameSel.options[nameSel.selectedIndex];
+        if (opt && opt.getAttribute('data-unit')) unitInp.value = opt.getAttribute('data-unit');
+      }
+      Pages.refreshTfSummary();
+    }
+
+    typeSel.onchange = function () {
+      Pages.onTfTypeChange(typeSel);
+      applyUnit();
+    };
+    nameSel.onchange = applyUnit;
+    qtyInp.oninput = function () { Pages.refreshTfSummary(); };
+    unitInp.oninput = function () { Pages.refreshTfSummary(); };
+    delBtn.onclick = function () {
+      div.remove();
+      Pages.refreshTfSummary();
+    };
+
+    if (presetName) {
+      nameSel.value = presetName;
+      if (nameSel.value !== presetName && type === 'general') {
+        var custom = div.querySelector('[data-f="name_custom"]');
+        if (custom) { custom.classList.remove('hidden'); custom.value = presetName; }
+      }
+    }
+    if (!presetUnit) applyUnit();
     box.scrollTop = box.scrollHeight;
   };
 
   Pages.onTfTypeChange = function (sel) {
-    const row = sel.closest('.tf-row');
-    const nameSel = row.querySelector('[data-f="name"]');
-    const custom = row.querySelector('[data-f="name_custom"]');
-    const opts = window.__tfOpts || { mat: '', prod: '', gen: '' };
+    var row = sel.closest('.tf-row');
+    var nameSel = row.querySelector('[data-f="name"]');
+    var custom = row.querySelector('[data-f="name_custom"]');
+    var opts = window.__tfOpts || { mat: '', prod: '', gen: '' };
     if (sel.value === 'material') {
       nameSel.innerHTML = opts.mat;
       nameSel.classList.remove('hidden');
       custom.classList.add('hidden');
+      custom.value = '';
     } else if (sel.value === 'product') {
       nameSel.innerHTML = opts.prod;
       nameSel.classList.remove('hidden');
       custom.classList.add('hidden');
+      custom.value = '';
     } else {
       nameSel.innerHTML = opts.gen + '<option value="">— سایر (دستی) —</option>';
       nameSel.classList.remove('hidden');
@@ -318,6 +464,7 @@
   };
 
 
+
   Pages.transferWhatsApp = async function (day) {
     day = day || todayJalali();
     try {
@@ -350,7 +497,6 @@
           if (!byBranch[b]) byBranch[b] = [];
           byBranch[b].push(t);
         });
-
         Object.keys(byBranch).forEach(function (branch) {
           textLines.push('');
           textLines.push('🌿 شعبه: ' + branch);
@@ -359,9 +505,8 @@
             var items = lines.filter(function (i) { return Number(i.transfer_id) === Number(t.id); });
             if (transfers.length > 1) textLines.push('ارسال ' + (idx + 1) + (t.notes ? ' (' + t.notes + ')' : '') + ':');
             else if (t.notes) textLines.push('توضیح: ' + t.notes);
-            if (!items.length) {
-              textLines.push('  (بدون قلم)');
-            } else {
+            if (!items.length) textLines.push('  (بدون قلم)');
+            else {
               items.forEach(function (i, n) {
                 var typeL = TYPE_LABELS[i.item_type] || i.item_type;
                 textLines.push(
@@ -374,12 +519,10 @@
             }
           });
         });
-
-        // summary by item name
         var sum = {};
         lines.forEach(function (i) {
-          var k = i.item_name + '|' + (i.unit || '') + '|' + (i.item_type || '');
-          if (!sum[k]) sum[k] = { name: i.item_name, unit: i.unit || '', type: i.item_type, qty: 0 };
+          var k = i.item_name + '|' + (i.unit || '');
+          if (!sum[k]) sum[k] = { name: i.item_name, unit: i.unit || '', qty: 0 };
           sum[k].qty += Number(i.quantity || 0);
         });
         var sumRows = Object.keys(sum).map(function (k) { return sum[k]; });
@@ -393,56 +536,108 @@
           });
         }
         textLines.push('');
-        textLines.push('تعداد برگه ارسال: ' + transfers.length);
-        textLines.push('تعداد ردیف: ' + lines.length);
+        textLines.push('تعداد برگه ارسال: ' + transfers.length + ' | ردیف: ' + lines.length);
       }
-
       textLines.push('══════════════════');
-      textLines.push('ثبت از سیستم گردش مواد — ' + company);
+      textLines.push('سیستم گردش مواد — ' + company);
 
       var text = textLines.join('\n');
       showModal(
         '<div class="modal max-w-lg" onclick="event.stopPropagation()"><h3 class="text-lg font-bold mb-2">📱 گزارش واتساپ — ارسال شعبه</h3>' +
-        '<p class="text-xs text-slate-400 mb-2">تاریخ: <b>' + day + '</b> — کپی کن و تو گروه بذار</p>' +
+        '<p class="text-xs text-slate-400 mb-2">تاریخ را عوض کن و بارگذاری بزن</p>' +
         '<div class="flex gap-2 mb-2">' +
         '<input id="wa-day" class="input-field text-sm flex-1" value="' + day + '" />' +
-        '<button type="button" class="btn-secondary text-sm" onclick="Pages.transferWhatsApp(document.getElementById(\'wa-day\').value)">بارگذاری</button></div>' +
-        '<textarea id="transfer-wa-text" class="input-field font-mono text-xs h-64" readonly></textarea>' +
+        '<button type="button" class="btn-secondary text-sm" id="wa-day-load">بارگذاری</button></div>' +
+        '<textarea id="wa-share-text" class="input-field font-mono text-xs h-64" readonly></textarea>' +
         '<div class="modal-sticky-actions flex gap-2">' +
-        '<button type="button" class="btn-primary flex-1" id="btn-copy-transfer-wa">📋 کپی متن</button>' +
-        '<button type="button" class="btn-secondary" id="btn-share-transfer-wa">اشتراک</button>' +
+        '<button type="button" class="btn-primary flex-1" id="btn-wa-copy">📋 کپی متن</button>' +
+        '<button type="button" class="btn-secondary" id="btn-wa-share">اشتراک</button>' +
         '<button type="button" class="btn-ghost" onclick="closeModal()">بستن</button></div></div>'
       );
-      var ta = document.getElementById('transfer-wa-text');
+      var ta = document.getElementById('wa-share-text');
       if (ta) ta.value = text;
-      document.getElementById('btn-copy-transfer-wa').onclick = async function () {
+      document.getElementById('wa-day-load').onclick = function () {
+        Pages.transferWhatsApp(document.getElementById('wa-day').value);
+      };
+      document.getElementById('btn-wa-copy').onclick = async function () {
         try {
-          await navigator.clipboard.writeText(text);
+          await navigator.clipboard.writeText(ta.value);
           toast('کپی شد — برو تو واتساپ پیست کن', 'success');
         } catch (err) {
           if (ta) { ta.focus(); ta.select(); }
           toast('متن را نگه دار و کپی کن', 'info');
         }
       };
-      var shareBtn = document.getElementById('btn-share-transfer-wa');
-      if (shareBtn) {
-        shareBtn.onclick = async function () {
-          if (navigator.share) {
-            try {
-              await navigator.share({ text: text });
-            } catch (e) {
-              if (e && e.name !== 'AbortError') toast('اشتراک ناموفق', 'error');
-            }
-          } else {
-            try {
-              await navigator.clipboard.writeText(text);
-              toast('کپی شد — واتساپ را باز کن و پیست کن', 'success');
-            } catch (_) {
-              if (ta) { ta.focus(); ta.select(); }
-            }
+      document.getElementById('btn-wa-share').onclick = async function () {
+        var t = ta ? ta.value : text;
+        if (navigator.share) {
+          try { await navigator.share({ text: t }); } catch (e) {
+            if (e && e.name !== 'AbortError') toast('اشتراک ناموفق', 'error');
           }
-        };
-      }
+        } else {
+          try {
+            await navigator.clipboard.writeText(t);
+            toast('کپی شد', 'success');
+          } catch (_) { if (ta) { ta.focus(); ta.select(); } }
+        }
+      };
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا', 'error');
+    }
+  };
+
+  Pages.stocktakeWhatsApp = async function (id) {
+    try {
+      var st = await DB.getById('stocktakes', id);
+      if (!st) return toast('یافت نشد', 'error');
+      var lines = ((await DB.getAll('stocktake_lines').catch(function () { return []; })) || []).filter(function (l) {
+        return Number(l.stocktake_id) === Number(id);
+      });
+      lines.sort(function (a, b) { return Math.abs(b.variance) - Math.abs(a.variance); });
+      var company = 'غذای انصار';
+      try {
+        var local = localStorage.getItem('kitchen_settings');
+        if (local) company = JSON.parse(local).company_name || company;
+      } catch (_) {}
+      var totalSys = 0, totalCnt = 0, absVar = 0, shortN = 0, surN = 0, okN = 0;
+      lines.forEach(function (l) {
+        totalSys += Number(l.system_qty || 0);
+        totalCnt += Number(l.counted_qty || 0);
+        var v = Number(l.variance || 0);
+        absVar += Math.abs(v);
+        if (v < 0) shortN++; else if (v > 0) surN++; else okN++;
+      });
+      var totalVar = Math.round((totalCnt - totalSys) * 100) / 100;
+      var accuracy = totalSys !== 0 ? Math.round((1 - absVar / Math.max(Math.abs(totalSys), 0.01)) * 1000) / 10 : 100;
+      var textLines = [
+        '📋 گزارش انبارگردانی — ' + company,
+        '📅 تاریخ: ' + (st.date || ''),
+        st.notes ? ('یادداشت: ' + st.notes) : null,
+        'ثبت‌کننده: ' + (st.created_by || '—'),
+        '══════════════════',
+        'جمع سیستم: ' + totalSys,
+        'جمع واقعی: ' + totalCnt,
+        'اختلاف خالص: ' + (totalVar > 0 ? '+' : '') + totalVar,
+        'دقت تقریبی: ' + accuracy + '٪',
+        'کسری: ' + shortN + ' | اضافه: ' + surN + ' | مطابق: ' + okN,
+        '─────────────'
+      ].filter(Boolean);
+      lines.forEach(function (l) {
+        var v = Number(l.variance || 0);
+        var tag = v < 0 ? '❌ کسری' : v > 0 ? '⚠️ اضافه' : '✅';
+        textLines.push(
+          tag + ' ' + l.material_name +
+          '\n   سیستم: ' + l.system_qty + ' | واقعی: ' + l.counted_qty +
+          ' | اختلاف: ' + (v > 0 ? '+' : '') + v +
+          (l.notes ? (' | ' + l.notes) : '')
+        );
+      });
+      textLines.push('══════════════════');
+      textLines.push('سیستم گردش مواد — ' + company);
+      Pages.showWhatsAppModal('انبارگردانی — واتساپ', textLines.join('\n'), {
+        subtitle: 'تاریخ ' + (st.date || '') + ' — برای مدیر'
+      });
     } catch (e) {
       console.error(e);
       toast(e.message || 'خطا', 'error');
@@ -600,7 +795,10 @@
                 '</td><td>' +
                 '<button class="btn-ghost text-xs" onclick="Pages.viewStocktake(' +
                 s.id +
-                ')">گزارش</button></td></tr>'
+                ')">گزارش</button> ' +
+                '<button class="btn-ghost text-xs text-brand-300" onclick="Pages.stocktakeWhatsApp(' +
+                s.id +
+                ')">📱</button></td></tr>'
               );
             })
             .join('')
@@ -812,9 +1010,10 @@
       '</tbody></table></div>' +
       '<p class="text-[10px] text-slate-500 mt-2">اختلاف منفی = کسری نسبت به سیستم (ممکن است ضایعات ثبت‌نشده، ارسال بدون ثبت، یا خطای ورود باشد). اختلاف مثبت = موجودی واقعی بیشتر از سیستم.</p>' +
       '<div class="flex gap-2 mt-3">' +
+      '<button class="btn-primary flex-1" onclick="Pages.stocktakeWhatsApp(' + id + ')">📱 واتساپ</button>' +
       '<button class="btn-secondary flex-1" onclick="Pages.exportStocktakeExcel(' +
       id +
-      ')">📥 اکسل برای مدیر</button>' +
+      ')">📥 اکسل</button>' +
       '<button class="btn-ghost" onclick="closeModal()">بستن</button></div></div>';
 
     showModal(reportHtml);

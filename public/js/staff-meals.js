@@ -355,6 +355,7 @@
       '<p class="text-slate-400 text-sm">صبحانه جدا · ناهار و شام یک غذا · قابل گزارش</p></div>' +
       '<div class="flex flex-wrap gap-2">' +
       '<button class="btn-secondary text-sm" onclick="navigate(\'personnel\')">← پرسنل</button>' +
+      '<button class="btn-secondary text-sm" onclick="Pages.staffMealWhatsApp()">📱 واتساپ امروز</button>' +
       '<button class="btn-secondary text-sm" onclick="Pages.staffMealReportForm()">📑 گزارش</button>' +
       '</div></div>' +
       '<div class="glass-card rounded-2xl p-4 mb-4 space-y-3">' +
