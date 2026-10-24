@@ -129,10 +129,42 @@ function enableCloudDB() {
       throw new Error('در حالت ابری، بازیابی از JSON را با احتیاط انجام دهید');
     },
     addProductionWithReturn: async (data) => {
+      const consumptions = data._consumptions || null;
+      delete data._consumptions;
       const r = await Api.add('productions', data);
-      return r.id;
+      const id = r.id;
+      if (consumptions && consumptions.length) {
+        for (const c of consumptions) {
+          await Api.add('production_consumptions', {
+            production_id: id,
+            material_name: c.material_name,
+            quantity: Number(c.quantity || 0)
+          });
+        }
+      }
+      return id;
     },
-    updateProductionWithReturn: async (data) => Api.put('productions', data),
+    updateProductionWithReturn: async (data) => {
+      const consumptions = data._consumptions !== undefined ? data._consumptions : null;
+      delete data._consumptions;
+      await Api.put('productions', data);
+      if (consumptions) {
+        const allC = (await Api.getAll('production_consumptions')) || [];
+        for (const c of allC) {
+          if (Number(c.production_id) === Number(data.id)) {
+            try { await Api.remove('production_consumptions', c.id); } catch (e) {}
+          }
+        }
+        for (const c of consumptions) {
+          await Api.add('production_consumptions', {
+            production_id: data.id,
+            material_name: c.material_name,
+            quantity: Number(c.quantity || 0)
+          });
+        }
+      }
+      return data.id;
+    },
   };
   window.__cloudMode = true;
 }

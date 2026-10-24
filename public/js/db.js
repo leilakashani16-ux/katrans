@@ -2,11 +2,11 @@
  * IndexedDB wrapper + seed data for Kitchen Inventory System
  */
 const DB_NAME = 'kitchen_inventory_v1';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let db = null;
 
-const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines'];
+const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions'];
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -220,9 +220,20 @@ async function calcStock() {
     transferItems = items.filter(i => i.item_type === 'material' && activeIds.has(i.transfer_id));
   } catch (e) { transferItems = []; }
 
+  let consumptions = [];
+  try { consumptions = (await getAll('production_consumptions')) || []; } catch (e) { consumptions = []; }
+  const multiProdIds = new Set(consumptions.map(c => Number(c.production_id)));
+  const activeProdIds = new Set(productions.map(p => Number(p.id)));
+
   return materials.map(m => {
     const totalIn = entries.filter(e => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0);
-    const totalOut = productions.filter(p => p.material_name === m.name).reduce((s, p) => s + Number(p.material_weight || 0), 0);
+    const singleOut = productions
+      .filter(p => !multiProdIds.has(Number(p.id)) && p.material_name === m.name)
+      .reduce((s, p) => s + Number(p.material_weight || 0), 0);
+    const multiOut = consumptions
+      .filter(c => c.material_name === m.name && activeProdIds.has(Number(c.production_id)))
+      .reduce((s, c) => s + Number(c.quantity || 0), 0);
+    const totalOut = singleOut + multiOut;
     const totalWaste = wastes.filter(w => w.material_name === m.name).reduce((s, w) => s + Number(w.quantity || 0), 0);
     const totalReturn = returns.filter(r => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
     const totalTransfer = transferItems.filter(i => i.item_name === m.name).reduce((s, i) => s + Number(i.quantity || 0), 0);
@@ -265,7 +276,18 @@ async function importBackup(data) {
 
 
 async function addProductionWithReturn(data) {
+  const consumptions = data._consumptions || null;
+  delete data._consumptions;
   const id = await add("productions", data);
+  if (consumptions && consumptions.length) {
+    for (const c of consumptions) {
+      await add("production_consumptions", {
+        production_id: id,
+        material_name: c.material_name,
+        quantity: Number(c.quantity || 0)
+      });
+    }
+  }
   if (data.remainder_type === "برگشت به مواد" && Number(data.remainder_weight || 0) > 0) {
     await add("returns", {
       date: data.date,
@@ -282,12 +304,30 @@ async function addProductionWithReturn(data) {
 }
 
 async function updateProductionWithReturn(data) {
+  const consumptions = data._consumptions || null;
+  delete data._consumptions;
   // remove old returns for this production if any
   const returns = await getAll("returns");
   for (const r of returns) {
     if (r.production_id === data.id) await remove("returns", r.id);
   }
+  // replace consumptions
+  try {
+    const allC = (await getAll("production_consumptions")) || [];
+    for (const c of allC) {
+      if (Number(c.production_id) === Number(data.id)) await remove("production_consumptions", c.id);
+    }
+  } catch (e) {}
   await put("productions", data);
+  if (consumptions && consumptions.length) {
+    for (const c of consumptions) {
+      await add("production_consumptions", {
+        production_id: data.id,
+        material_name: c.material_name,
+        quantity: Number(c.quantity || 0)
+      });
+    }
+  }
   if (data.remainder_type === "برگشت به مواد" && Number(data.remainder_weight || 0) > 0) {
     await add("returns", {
       date: data.date,

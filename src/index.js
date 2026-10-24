@@ -7,7 +7,7 @@
  * Requires D1 binding named "DB"
  */
 
-const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines']);
+const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions']);
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -485,6 +485,31 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     notes TEXT
   )`).run();
 
+  await db.prepare(`CREATE TABLE IF NOT EXISTS recipes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_name TEXT UNIQUE NOT NULL,
+    mode TEXT DEFAULT 'multi_input',
+    yield_factor REAL,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS recipe_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_name TEXT NOT NULL,
+    material_name TEXT NOT NULL,
+    qty REAL NOT NULL DEFAULT 0,
+    sort_order INTEGER DEFAULT 0
+  )`).run();
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS production_consumptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id INTEGER NOT NULL,
+    material_name TEXT NOT NULL,
+    quantity REAL NOT NULL DEFAULT 0
+  )`).run();
+
+
   // seed a few general items if empty
   try {
     const gc = await db.prepare('SELECT COUNT(*) as c FROM general_items').first();
@@ -663,9 +688,21 @@ async function handleApi(request, env) {
            WHERE (t.deleted_at IS NULL OR t.deleted_at = '') AND i.item_type = 'material'`
         ).all()).results || [];
       } catch (e) { transferItems = []; }
+      let consumptions = [];
+      try {
+        consumptions = (await env.DB.prepare('SELECT * FROM production_consumptions').all()).results || [];
+      } catch (e) { consumptions = []; }
+      const multiProdIds = new Set(consumptions.map((c) => Number(c.production_id)));
+      const activeProdIds = new Set(productions.map((p) => Number(p.id)));
       const stock = materials.map((m) => {
         const totalIn = entries.filter((e) => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0);
-        const totalOut = productions.filter((p) => p.material_name === m.name).reduce((s, p) => s + Number(p.material_weight || 0), 0);
+        const singleOut = productions
+          .filter((p) => !multiProdIds.has(Number(p.id)) && p.material_name === m.name)
+          .reduce((s, p) => s + Number(p.material_weight || 0), 0);
+        const multiOut = consumptions
+          .filter((c) => c.material_name === m.name && activeProdIds.has(Number(c.production_id)))
+          .reduce((s, c) => s + Number(c.quantity || 0), 0);
+        const totalOut = singleOut + multiOut;
         const totalWaste = wastes.filter((w) => w.material_name === m.name).reduce((s, w) => s + Number(w.quantity || 0), 0);
         const totalReturn = returns.filter((r) => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
         const totalTransfer = transferItems.filter((i) => i.item_name === m.name).reduce((s, i) => s + Number(i.quantity || 0), 0);
@@ -845,7 +882,7 @@ async function handleApi(request, env) {
       if (store === 'productions' && !['admin', 'production'].includes(user.role)) {
         return json({ error: 'forbidden' }, 403);
       }
-      if (['materials', 'products', 'personnel', 'daily_plans', 'staff_scores', 'daily_staff_menu', 'attendance_meals', 'general_items', 'stocktakes', 'stocktake_lines'].includes(store) && user.role !== 'admin') {
+      if (['materials', 'products', 'personnel', 'daily_plans', 'staff_scores', 'daily_staff_menu', 'attendance_meals', 'general_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items'].includes(store) && user.role !== 'admin') {
         return json({ error: 'admin only' }, 403);
       }
 
