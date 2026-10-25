@@ -355,7 +355,7 @@
       '<p class="text-slate-400 text-sm">صبحانه جدا · ناهار و شام یک غذا · قابل گزارش</p></div>' +
       '<div class="flex flex-wrap gap-2">' +
       '<button class="btn-secondary text-sm" onclick="navigate(\'personnel\')">← پرسنل</button>' +
-      '<button class="btn-secondary text-sm" onclick="Pages.staffMealWhatsApp()">📱 واتساپ امروز</button>' +
+      '<button class="btn-secondary text-sm" onclick="Pages.staffMealWhatsApp(\'' + day + '\')">📱 واتساپ امروز</button>' +
       '<button class="btn-secondary text-sm" onclick="Pages.staffMealReportForm()">📑 گزارش</button>' +
       '</div></div>' +
       '<div class="glass-card rounded-2xl p-4 mb-4 space-y-3">' +
@@ -416,7 +416,10 @@
           '<button class="btn-primary" onclick="Pages.saveAttendance(\'' +
           day +
           '\')">💾 ذخیره حضور و وعده‌ها</button>' +
-          '<button class="btn-ghost text-sm" onclick="Pages.markAllPresent()">همه حاضر</button></div>'
+          '<button class="btn-ghost text-sm" onclick="Pages.markAllPresent()">همه حاضر</button>' +
+          '<button class="btn-ghost text-sm text-red-400" onclick="Pages.deleteAttendanceDay(\'' +
+          day +
+          '\')">🗑 حذف این روز</button></div>'
         : '') +
       '</div>'
     );
@@ -670,4 +673,147 @@
     exportToExcel(data, 'staff-meals-' + from + '-' + to);
     toast('خروجی اکسل آماده شد', 'success');
   };
+
+  Pages.deleteAttendanceDay = async function (day) {
+    if (!Auth.isAdmin()) return toast('فقط مدیر می‌تواند حذف کند', 'error');
+    day = day || (document.getElementById('att-day') && document.getElementById('att-day').value) || todayJalali();
+    if (!window.confirm('همه حضور و وعده‌های تاریخ «' + day + '» حذف شود؟\nنام غذای آن روز هم پاک می‌شود.')) return;
+    try {
+      var att = (await DB.getAll('attendance_meals').catch(function () { return []; })) || [];
+      var menus = (await DB.getAll('daily_staff_menu').catch(function () { return []; })) || [];
+      var nAtt = 0, nMenu = 0;
+      for (var i = 0; i < att.length; i++) {
+        if (att[i].date === day && att[i].id != null) {
+          await DB.remove('attendance_meals', att[i].id);
+          nAtt++;
+        }
+      }
+      for (var j = 0; j < menus.length; j++) {
+        if (menus[j].date === day && menus[j].id != null) {
+          await DB.remove('daily_staff_menu', menus[j].id);
+          nMenu++;
+        }
+      }
+      toast('حذف شد: ' + nAtt + ' حضور، ' + nMenu + ' منو', 'success');
+      try { closeModal(); } catch (_) {}
+      navigate('attendance?day=' + encodeURIComponent(day));
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در حذف — شاید تاریخ قفل باشد', 'error');
+    }
+  };
+
+  Pages.staffMealWhatsApp = async function (day) {
+    day = day || (typeof hashParam === 'function' ? hashParam('day', todayJalali()) : todayJalali());
+    try {
+      var people = ((await DB.getAll('personnel').catch(function () { return []; })) || []).filter(function (p) {
+        return p.active !== false && p.active !== 0;
+      });
+      var menus = (await DB.getAll('daily_staff_menu').catch(function () { return []; })) || [];
+      var att = ((await DB.getAll('attendance_meals').catch(function () { return []; })) || []).filter(function (a) {
+        return a.date === day;
+      });
+      var menu = menus.find(function (m) { return m.date === day; }) || {};
+      var company = 'غذای انصار';
+      try {
+        var local = localStorage.getItem('kitchen_settings');
+        if (local) company = JSON.parse(local).company_name || company;
+      } catch (_) {}
+
+      var present = 0, br = 0, lu = 0, di = 0;
+      att.forEach(function (a) {
+        if (Number(a.present)) present++;
+        if (Number(a.breakfast)) br++;
+        if (Number(a.lunch)) lu++;
+        if (Number(a.dinner)) di++;
+      });
+
+      var byTeam = { executive: [], sales: [], transport: [] };
+      att.forEach(function (a) {
+        var t = a.team || 'executive';
+        if (!byTeam[t]) byTeam[t] = [];
+        byTeam[t].push(a);
+      });
+
+      var lines = [
+        '🍽️ گزارش حضور و غذای پرسنلی — ' + company,
+        '📅 تاریخ: ' + day,
+        '══════════════════',
+        'صبحانه: ' + (menu.breakfast_name || '—'),
+        'ناهار/شام: ' + (menu.main_meal_name || '—'),
+        '─────────────',
+        '👥 حضور: ' + present + ' از ' + people.length,
+        '🥐 صبحانه: ' + br + ' | 🍲 ناهار: ' + lu + ' | 🌙 شام: ' + di
+      ];
+
+      ['executive', 'sales', 'transport'].forEach(function (tk) {
+        var rows = byTeam[tk] || [];
+        if (!rows.length) return;
+        lines.push('');
+        lines.push((TEAM_LABELS[tk] || tk) + ':');
+        rows.forEach(function (a) {
+          if (!Number(a.present) && !Number(a.breakfast) && !Number(a.lunch) && !Number(a.dinner)) return;
+          var flags = [];
+          if (Number(a.present)) flags.push('حاضر');
+          if (Number(a.breakfast)) flags.push('صبح');
+          if (Number(a.lunch)) flags.push('ناهار');
+          if (Number(a.dinner)) flags.push('شام');
+          lines.push('• ' + (a.person_name || '') + (flags.length ? (' — ' + flags.join('، ')) : ''));
+        });
+      });
+
+      lines.push('══════════════════');
+      lines.push('سیستم گردش مواد — ' + company);
+      var text = lines.join('\n');
+
+      showModal(
+        '<div class="modal max-w-lg" onclick="event.stopPropagation()">' +
+        '<h3 class="text-lg font-bold mb-2">📱 حضور و غذا — واتساپ</h3>' +
+        '<p class="text-xs text-slate-400 mb-2">تاریخ: <b>' + day + '</b></p>' +
+        '<div class="flex gap-2 mb-2">' +
+        '<input id="wa-meal-day" class="input-field text-sm flex-1" value="' + day + '" />' +
+        '<button type="button" class="btn-secondary text-sm" id="wa-meal-reload">بارگذاری</button></div>' +
+        '<textarea id="wa-meal-text" class="input-field font-mono text-xs h-64" readonly></textarea>' +
+        '<div class="modal-sticky-actions flex gap-2">' +
+        '<button type="button" class="btn-primary flex-1" id="btn-wa-meal-copy">📋 کپی متن</button>' +
+        '<button type="button" class="btn-secondary" id="btn-wa-meal-share">اشتراک</button>' +
+        '<button type="button" class="btn-ghost" onclick="closeModal()">بستن</button></div></div>'
+      );
+      var ta = document.getElementById('wa-meal-text');
+      if (ta) ta.value = text;
+      document.getElementById('wa-meal-reload').onclick = function () {
+        var d = document.getElementById('wa-meal-day').value;
+        Pages.staffMealWhatsApp(d);
+      };
+      document.getElementById('btn-wa-meal-copy').onclick = async function () {
+        var t = ta ? ta.value : text;
+        try {
+          await navigator.clipboard.writeText(t);
+          toast('کپی شد — برو تو واتساپ پیست کن', 'success');
+        } catch (_) {
+          if (ta) { ta.focus(); ta.select(); }
+          toast('متن را نگه دار و کپی کن', 'info');
+        }
+      };
+      document.getElementById('btn-wa-meal-share').onclick = async function () {
+        var t = ta ? ta.value : text;
+        if (navigator.share) {
+          try { await navigator.share({ text: t }); } catch (e) {
+            if (e && e.name !== 'AbortError') toast('اشتراک ناموفق', 'error');
+          }
+        } else {
+          try {
+            await navigator.clipboard.writeText(t);
+            toast('کپی شد', 'success');
+          } catch (_) {
+            if (ta) { ta.focus(); ta.select(); }
+          }
+        }
+      };
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'خطا در ساخت گزارش واتساپ', 'error');
+    }
+  };
+
 })();
