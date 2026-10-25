@@ -52,16 +52,20 @@ function buildNav() {
 }
 
 async function navigate(page) {
-  const pure = page.split("?")[0];
-  if (!location.hash.startsWith("#" + pure)) location.hash = page;
-  page = pure;
-  currentPage = page;
+  // پشتیبانی از query مثل attendance?day=...&team=sales و personnel?tab=sales
+  const desired = String(page || '').replace(/^#/, '');
+  const pure = desired.split('?')[0] || 'dashboard';
+  const currentHash = (location.hash || '').replace(/^#/, '');
+  if (currentHash !== desired) {
+    location.hash = desired;
+  }
+  currentPage = pure;
   buildNav();
   const content = document.getElementById('page-content');
   content.innerHTML = '<div class="text-center text-slate-400 py-20">در حال بارگذاری...</div>';
   try {
-    if (typeof Pages[page] === 'function') {
-      content.innerHTML = await Pages[page]();
+    if (typeof Pages[pure] === 'function') {
+      content.innerHTML = await Pages[pure]();
       content.classList.remove('fade-in');
       void content.offsetWidth;
       content.classList.add('fade-in');
@@ -296,7 +300,8 @@ async function softRefreshIfNeeded() {
       window.__dataVersion = ver;
       if (window.Api && Api.invalidateCache) Api.invalidateCache();
     }
-    await navigate(currentPage);
+    const keep = (location.hash || '').replace(/^#/, '') || currentPage;
+    await navigate(keep);
   } catch (e) {
     console.warn('sync refresh failed', e);
   }

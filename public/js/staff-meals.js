@@ -499,7 +499,8 @@
         saved++;
       }
       toast('حضور و وعده‌ها ذخیره شد (' + saved + ' نفر)', 'success');
-      navigate('attendance?day=' + encodeURIComponent(day));
+      var teamKeep = (typeof hashParam === 'function' ? hashParam('team', 'all') : 'all');
+      navigate('attendance?day=' + encodeURIComponent(day) + '&team=' + encodeURIComponent(teamKeep));
     } catch (e) {
       console.error(e);
       toast(e.message || 'خطا در ذخیره حضور', 'error');
@@ -590,7 +591,7 @@
         totals.dinner +
         '</b></div></div>' +
         '<div class="table-wrap max-h-80 overflow-y-auto"><table class="data">' +
-        '<thead><tr><th>تاریخ</th><th>صبحانه</th><th>ناهار/شام</th><th>حضور</th><th>صبح</th><th>ناهار</th><th>شام</th></tr></thead><tbody>' +
+        '<thead><tr><th>تاریخ</th><th>صبحانه</th><th>ناهار/شام</th><th>حضور</th><th>صبح</th><th>ناهار</th><th>شام</th><th></th></tr></thead><tbody>' +
         (days.length
           ? days
               .map(function (d) {
@@ -611,11 +612,20 @@
                   s.lunch +
                   '</td><td>' +
                   s.dinner +
+                  '</td><td class="whitespace-nowrap">' +
+                  '<button type="button" class="btn-ghost text-xs" onclick="closeModal(); navigate(\'attendance?day=' +
+                  encodeURIComponent(d) +
+                  '\')">ویرایش</button> ' +
+                  (Auth.isAdmin()
+                    ? '<button type="button" class="btn-ghost text-xs text-red-400" onclick="Pages.deleteAttendanceDay(\'' +
+                      d +
+                      '\')">حذف</button>'
+                    : '') +
                   '</td></tr>'
                 );
               })
               .join('')
-          : '<tr><td colspan="7" class="text-center text-slate-500 py-6">داده‌ای نیست</td></tr>') +
+          : '<tr><td colspan="8" class="text-center text-slate-500 py-6">داده‌ای نیست</td></tr>') +
         '</tbody></table></div>' +
         '<div class="flex gap-2 mt-4">' +
         '<button class="btn-secondary flex-1" onclick="Pages.exportStaffMealExcel(\'' +
