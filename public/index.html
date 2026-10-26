@@ -16,31 +16,58 @@
   <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-192.png" />
   <title>غذای انصار — سیستم گردش مواد</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jalaali-js@1.2.7/dist/jalaali.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- CSS محلی اول — بدون اینترنت خارجی هم UI کار می‌کند -->
+  <link rel="stylesheet" href="css/app-core.css" />
+  <!-- فونت اختیاری؛ اگر گوگل بلاک باشد Tahoma استفاده می‌شود -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'" />
+  <!-- Tailwind اختیاری (اگر CDN باز باشد ظاهر کامل‌تر می‌شود) -->
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: { sans: ['Vazirmatn', 'system-ui', 'sans-serif'] },
-          colors: {
-            brand: {
-              50: '#ecfdf3', 100: '#d1fae0', 200: '#a7f3c5', 300: '#6ee7a8',
-              400: '#34d389', 500: '#1a9b55', 600: '#0d7a42', 700: '#0d4d2e',
-              800: '#0a3d24', 900: '#072e1b'
-            },
-            cream: { 100: '#f7f3e8', 200: '#ebe4d0', 300: '#d4c9a8' },
-            accent: { 400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed' },
-            slate: { 850: '#141c2b', 950: '#070b14' }
+    window.__cdnOk = false;
+    (function () {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.tailwindcss.com';
+      s.async = true;
+      s.onload = function () {
+        window.__cdnOk = true;
+        try {
+          if (window.tailwind) {
+            tailwind.config = {
+              theme: {
+                extend: {
+                  fontFamily: { sans: ['Vazirmatn', 'Tahoma', 'system-ui', 'sans-serif'] },
+                  colors: {
+                    brand: {
+                      300: '#6ee7b7', 400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857',
+                      800: '#0a3d24', 900: '#072e1b'
+                    },
+                    cream: { 100: '#f7f3e8', 200: '#ebe4d0', 300: '#d4c9a8' },
+                    accent: { 400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed' },
+                    slate: { 850: '#141c2b', 950: '#070b14' }
+                  }
+                }
+              }
+            };
           }
+        } catch (e) {}
+      };
+      s.onerror = function () {
+        var w = document.getElementById('cdn-warn');
+        if (w) w.classList.add('show');
+      };
+      setTimeout(function () {
+        if (!window.__cdnOk) {
+          var w = document.getElementById('cdn-warn');
+          if (w) w.classList.add('show');
         }
-      }
-    }
+      }, 8000);
+      document.head.appendChild(s);
+    })();
   </script>
+  <!-- کتابخانه‌های گزارش — غیرمسدودکننده -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/jalaali-js@1.2.7/dist/jalaali.min.js"></script>
   <style>
     * { font-family: 'Vazirmatn', system-ui, sans-serif; box-sizing: border-box; }
     body {
@@ -326,6 +353,7 @@
   </style>
 </head>
 <body class="text-slate-100 antialiased">
+  <div id="cdn-warn">اتصال به CDN کند/قطع است — حالت پایدار بدون Tailwind فعال شد. صفحه باید کار کند.</div>
   <!-- Login Screen -->
   <div id="login-screen" class="min-h-screen flex items-center justify-center p-4">
     <div class="glass rounded-3xl p-8 w-full max-w-md shadow-2xl fade-in">

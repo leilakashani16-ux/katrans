@@ -1,6 +1,12 @@
-رفع واتساپ و حذف غذای پرسنلی
+رفع اجرای PC / اینترنت مخابرات (بدون وابستگی اجباری به CDN)
 
-فقط:
-public/js/staff-meals.js
+جایگزین:
+public/index.html
+public/sw.js
+public/css/app-core.css  (جدید)
+public/js/utils.js
 
-Deploy + رفرش سخت
+بعد Deploy روی PC:
+1) Ctrl+Shift+R یا Cache را پاک کن
+2) اگر هنوز قدیمی بود: DevTools → Application → Service Workers → Unregister
+3) دوباره باز کن
