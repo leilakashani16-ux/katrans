@@ -99,10 +99,23 @@
     var user = me();
     var perm = ('Notification' in window) ? Notification.permission : 'unsupported';
 
+    var isAdmin = !!(Auth && Auth.isAdmin && Auth.isAdmin());
     var rows = msgs
       .map(function (m) {
         var mine = m.username && user.username && m.username === user.username;
+        var canMod = mine || isAdmin;
         var time = (m.created_at || '').replace('T', ' ').slice(0, 16);
+        var acts = canMod
+          ? '<div class="flex gap-2 mt-1">' +
+            (mine
+              ? '<button type="button" class="text-[10px] text-slate-400" onclick="Pages.editChatMessage(' +
+                m.id +
+                ')">ویرایش</button>'
+              : '') +
+            '<button type="button" class="text-[10px] text-red-400" onclick="Pages.deleteChatMessage(' +
+            m.id +
+            ')">حذف</button></div>'
+          : '';
         return (
           '<div class="flex ' +
           (mine ? 'justify-start' : 'justify-end') +
@@ -122,7 +135,9 @@
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;') +
-          '</div></div></div>'
+          '</div>' +
+          acts +
+          '</div></div>'
         );
       })
       .join('');

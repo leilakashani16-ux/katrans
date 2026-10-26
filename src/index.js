@@ -1017,7 +1017,24 @@ const keys = Object.keys(body).filter((k) => body[k] !== undefined);
     }
 
     if (request.method === 'PUT' && id) {
-      if (!user || user.role !== 'admin') return json({ error: 'admin only' }, 403);
+      if (!user) return json({ error: 'auth required' }, 401);
+      if (store === 'chat_messages') {
+        const existing = await env.DB.prepare(`SELECT * FROM ${store} WHERE id = ?`).bind(id).first();
+        if (!existing) return json({ error: 'not found' }, 404);
+        if (user.role !== 'admin' && existing.username !== user.username) {
+          return json({ error: 'فقط پیام خودتان یا مدیر' }, 403);
+        }
+        const body = await request.json().catch(() => ({}));
+        const newBody = String(body.body || body.text || '').trim().slice(0, 2000);
+        if (!newBody) return json({ error: 'پیام خالی است' }, 400);
+        await env.DB.prepare(
+          `UPDATE chat_messages SET body = ?, created_at = COALESCE(created_at, datetime('now')) WHERE id = ?`
+        ).bind(newBody, id).run();
+        // keep username immutable
+        await bumpDataVersion(env.DB);
+        return json({ ok: true, id });
+      }
+      if (user.role !== 'admin') return json({ error: 'admin only' }, 403);
       const body = await request.json();
       delete body.id;
       if (body.password) {
@@ -1079,8 +1096,18 @@ const keys = Object.keys(body).filter((k) => body[k] !== undefined);
     }
 
     if (request.method === 'DELETE' && id) {
-      if (!user || user.role !== 'admin') return json({ error: 'admin only' }, 403);
+      if (!user) return json({ error: 'auth required' }, 401);
       const row = await env.DB.prepare(`SELECT * FROM ${store} WHERE id = ?`).bind(id).first();
+      if (store === 'chat_messages') {
+        if (!row) return json({ error: 'not found' }, 404);
+        if (user.role !== 'admin' && row.username !== user.username) {
+          return json({ error: 'فقط پیام خودتان یا مدیر' }, 403);
+        }
+        await env.DB.prepare(`DELETE FROM chat_messages WHERE id = ?`).bind(id).run();
+        await bumpDataVersion(env.DB);
+        return json({ ok: true });
+      }
+      if (user.role !== 'admin') return json({ error: 'admin only' }, 403);
       if (row && row.date && await isDayLocked(env.DB, row.date)) {
         return json({ error: 'حذف روی تاریخ قفل‌شده مجاز نیست', code: 'DAY_LOCKED' }, 423);
       }

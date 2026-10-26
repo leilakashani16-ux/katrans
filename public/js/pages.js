@@ -2861,9 +2861,11 @@ Pages.planForm = async function () {
 Pages._buildLeague = function (scores, periodDays) {
   // periodDays: null = all time, number = last N calendar-ish days by jalali string
   const today = todayJalali();
-  let filtered = scores || [];
+  let filtered = (scores || []).map(s => {
+    const day = s.day || s.date || '';
+    return Object.assign({}, s, { day: day });
+  });
   if (periodDays && periodDays > 0) {
-    // keep scores where day is within approx window (string compare works same year)
     const parts = today.split('/').map(Number);
     let d = parts[2] - (periodDays - 1);
     let m = parts[1];
@@ -2872,7 +2874,6 @@ Pages._buildLeague = function (scores, periodDays) {
     const from = y + '/' + String(m).padStart(2, '0') + '/' + String(Math.max(1, d)).padStart(2, '0');
     filtered = filtered.filter(s => s.day && jalaliCompare(s.day, from) >= 0 && jalaliCompare(s.day, today) <= 0);
   }
-  // aggregate by person: total points, avg, days played, last score, form (last 5)
   const map = {};
   filtered.forEach(s => {
     const name = s.personnel_name || 'نامشخص';
@@ -2926,7 +2927,9 @@ Pages._prevRankMap = function (scores, periodDays) {
 
 Pages.league = async function () {
   let scores = [];
+  let productions = [];
   try { scores = (await DB.getAll('staff_scores')) || []; } catch (e) { scores = []; }
+  try { productions = (await DB.getAll('productions')) || []; } catch (e) { productions = []; }
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const period = params.get('p') || '30'; // today | 7 | 30 | all
   let periodDays = null;
@@ -2938,6 +2941,7 @@ Pages.league = async function () {
 
   const table = Pages._buildLeague(scores, periodDays);
   const prevMap = periodDays ? Pages._prevRankMap(scores, periodDays) : {};
+  const prodTable = Pages._buildProdPerformance(productions, periodDays);
 
   const medal = (rank) => {
     if (rank === 1) return '🥇';
@@ -2973,10 +2977,10 @@ Pages.league = async function () {
     </div>
 
     <div class="filter-bar glass-card rounded-xl p-2 mb-4 flex flex-wrap gap-2">
-      <button class="btn-ghost text-sm ${period==='today'?'text-brand-300':''}" onclick="location.hash='league?p=today'; navigate('league')">امروز</button>
-      <button class="btn-ghost text-sm ${period==='7'?'text-brand-300':''}" onclick="location.hash='league?p=7'; navigate('league')">۷ روز</button>
-      <button class="btn-ghost text-sm ${period==='30'?'text-brand-300':''}" onclick="location.hash='league?p=30'; navigate('league')">۳۰ روز</button>
-      <button class="btn-ghost text-sm ${period==='all'?'text-brand-300':''}" onclick="location.hash='league?p=all'; navigate('league')">کل فصل</button>
+      <button class="btn-ghost text-sm ${period==='today'?'text-brand-300':''}" onclick="navigate('league?p=today')">امروز</button>
+      <button class="btn-ghost text-sm ${period==='7'?'text-brand-300':''}" onclick="navigate('league?p=7')">۷ روز</button>
+      <button class="btn-ghost text-sm ${period==='30'?'text-brand-300':''}" onclick="navigate('league?p=30')">۳۰ روز</button>
+      <button class="btn-ghost text-sm ${period==='all'?'text-brand-300':''}" onclick="navigate('league?p=all')">کل فصل</button>
     </div>
 
     <div class="glass-card rounded-2xl p-4 mb-4">
@@ -3011,6 +3015,26 @@ Pages.league = async function () {
         </table>
       </div>
       <p class="text-[10px] text-slate-500 mt-3">امتیاز = جمع نمرات روزانه · رتبه بر اساس امتیاز (سپس میانگین) · ▲▼ نسبت به دوره قبل</p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-4 mb-6 overflow-x-auto">
+      <h2 class="font-semibold mb-1">📊 عملکرد تولید پرسنل</h2>
+      <p class="text-xs text-slate-400 mb-3">بر اساس فیلد «تولیدکننده» در ثبت تولید · ${periodLabel}</p>
+      <table class="data">
+        <thead><tr><th>رتبه</th><th>نام</th><th>تعداد تولید</th><th>مصرف (کیلو/واحد)</th><th>رکورد</th><th>مدت (دقیقه)</th></tr></thead>
+        <tbody>
+          ${prodTable.length ? prodTable.map(r => `
+            <tr>
+              <td class="font-bold">${r.rank <= 3 ? (r.rank===1?'🥇':r.rank===2?'🥈':'🥉') : r.rank}</td>
+              <td class="font-medium">${r.name}</td>
+              <td class="text-brand-300 font-bold">${fmtNum(r.qty)}</td>
+              <td>${fmtNum(r.weight)}</td>
+              <td class="text-slate-400">${r.count}</td>
+              <td class="text-slate-400">${fmtNum(r.duration)}</td>
+            </tr>`).join('') : '<tr><td colspan="6" class="text-center text-slate-500 py-8">در این بازه تولیدی با نام تولیدکننده ثبت نشده</td></tr>'}
+        </tbody>
+      </table>
+      <p class="text-[10px] text-slate-500 mt-2">اگر خالی است، در ثبت تولید فیلد «نام تولیدکننده» را پر کنید.</p>
     </div>
 
     ${table.length >= 1 ? `
