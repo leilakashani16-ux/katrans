@@ -443,7 +443,16 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
+        // نسخه جدید SW — کش‌های خراب قبلی را پاک کن
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          return Promise.all(regs.map(function (r) {
+            return r.update().catch(function () {});
+          }));
+        }).then(function () {
+          return navigator.serviceWorker.register('sw.js?v=5');
+        }).catch(function () {
+          return navigator.serviceWorker.register('sw.js');
+        });
         if (localStorage.getItem('kitchen_night_shift') === '1') {
           document.documentElement.classList.add('night-shift');
         }

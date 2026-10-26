@@ -1,12 +1,13 @@
-رفع اجرای PC / اینترنت مخابرات (بدون وابستگی اجباری به CDN)
+رفع Service Worker خراب (ERR_FAILED روی همه JSها)
 
 جایگزین:
-public/index.html
 public/sw.js
-public/css/app-core.css  (جدید)
-public/js/utils.js
+public/index.html
 
-بعد Deploy روی PC:
-1) Ctrl+Shift+R یا Cache را پاک کن
-2) اگر هنوز قدیمی بود: DevTools → Application → Service Workers → Unregister
-3) دوباره باز کن
+Deploy
+
+روی PC حتماً:
+1) F12 → Application → Service Workers → Unregister
+2) Application → Cache Storage → همه را Delete
+3) Ctrl+Shift+R
+4) صفحه را ببند و دوباره باز کن
