@@ -108,13 +108,13 @@
         var acts = canMod
           ? '<div class="flex gap-2 mt-1">' +
             (mine
-              ? '<button type="button" class="text-[10px] text-slate-400" onclick="Pages.editChatMessage(' +
+              ? '<button type="button" class="text-[10px] text-slate-400 chat-act" data-act="edit" data-id="' +
                 m.id +
-                ')">ویرایش</button>'
+                '">ویرایش</button>'
               : '') +
-            '<button type="button" class="text-[10px] text-red-400" onclick="Pages.deleteChatMessage(' +
+            '<button type="button" class="text-[10px] text-red-400 chat-act" data-act="del" data-id="' +
             m.id +
-            ')">حذف</button></div>'
+            '">حذف</button></div>'
           : '';
         return (
           '<div class="flex ' +
@@ -226,6 +226,66 @@
     }
   };
 
+
+  Pages.deleteChatMessage = async function (id) {
+    id = Number(id);
+    if (!id) return toast('شناسه پیام نامعتبر', 'error');
+    if (!window.confirm('این پیام حذف شود؟')) return;
+    try {
+      await DB.remove('chat_messages', id);
+      toast('حذف شد', 'success');
+      if (typeof navigate === 'function') navigate('chat');
+    } catch (e) {
+      console.error(e);
+      toast((e && e.message) || 'خطا در حذف — دسترسی یا سرور', 'error');
+    }
+  };
+
+  Pages.editChatMessage = async function (id) {
+    id = Number(id);
+    if (!id) return toast('شناسه پیام نامعتبر', 'error');
+    try {
+      var msgs = await loadMessages();
+      var m = msgs.find(function (x) { return Number(x.id) === id; });
+      if (!m) return toast('پیام پیدا نشد', 'error');
+      var user = me();
+      var isAdmin = !!(window.Auth && Auth.isAdmin && Auth.isAdmin());
+      if (!isAdmin && m.username !== user.username) return toast('فقط پیام خودتان', 'error');
+      showModal(
+        '<div class="modal max-w-md"><h3 class="text-lg font-bold mb-3">ویرایش پیام</h3>' +
+        '<textarea id="chat-edit-body" class="input-field h-28">' +
+        String(m.body || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+        '</textarea>' +
+        '<div class="flex gap-2 mt-3">' +
+        '<button type="button" class="btn-primary flex-1" id="chat-edit-save">ذخیره</button>' +
+        '<button type="button" class="btn-ghost" onclick="closeModal()">انصراف</button></div></div>'
+      );
+      document.getElementById('chat-edit-save').onclick = async function () {
+        var next = (document.getElementById('chat-edit-body').value || '').trim().slice(0, 2000);
+        if (!next) return toast('پیام خالی', 'error');
+        try {
+          await DB.put('chat_messages', {
+            id: id,
+            body: next,
+            username: m.username,
+            full_name: m.full_name,
+            role: m.role,
+            created_at: m.created_at
+          });
+          toast('ویرایش شد', 'success');
+          closeModal();
+          navigate('chat');
+        } catch (err) {
+          console.error(err);
+          toast((err && err.message) || 'خطا در ویرایش', 'error');
+        }
+      };
+    } catch (e) {
+      console.error(e);
+      toast((e && e.message) || 'خطا', 'error');
+    }
+  };
+
   Pages.pollChat = async function () {
     try {
       if (!window.DB) return;
@@ -283,6 +343,27 @@
       console.warn('chat poll', e);
     }
   };
+
+  if (!window.__chatActBound) {
+    window.__chatActBound = true;
+    document.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (!t || !t.classList || !t.classList.contains('chat-act')) return;
+      ev.preventDefault();
+      var id = t.getAttribute('data-id');
+      var act = t.getAttribute('data-act');
+      if (act === 'del') Pages.deleteChatMessage(id);
+      if (act === 'edit') Pages.editChatMessage(id);
+    });
+  }
+
+  try {
+    if (window.Pages) {
+      window.Pages.deleteChatMessage = Pages.deleteChatMessage;
+      window.Pages.editChatMessage = Pages.editChatMessage;
+      window.Pages.sendChatMessage = Pages.sendChatMessage;
+    }
+  } catch (_) {}
 
   if (!window.__chatPollStarted) {
     window.__chatPollStarted = true;

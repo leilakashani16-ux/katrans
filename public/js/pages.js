@@ -85,8 +85,13 @@ Pages.dashboard = async function () {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const df = params.get('df') || '';
   const dt = params.get('dt') || '';
-  let cperiod = params.get('cperiod') || 'day';
-  if (cperiod !== 'day' && cperiod !== 'month' && cperiod !== 'year') cperiod = 'day';
+  let cperiod = params.get('cperiod') || '';
+  if (cperiod !== 'day' && cperiod !== 'month' && cperiod !== 'year') {
+    // پیش‌فرض: اگر امروز تولید نیست → امسال (تا جدول خالی نماند)
+    const t0 = todayJalali();
+    const hasToday = (productions0 || []).some(p => p && p.date === t0);
+    cperiod = hasToday ? 'day' : 'year';
+  }
   if (df || dt) {
     entries = filterByDateAndSearch(entries, df, dt, '', ['date']);
     productions = filterByDateAndSearch(productions, df, dt, '', ['date']);
@@ -280,7 +285,13 @@ Pages.dashboard = async function () {
 
   const periodChip = (id, label) => {
     const on = cperiod === id;
-    return '<button type="button" data-cperiod="' + id + '" class="' + (on ? 'btn-primary' : 'btn-ghost') + ' text-xs" onclick="Pages.applyDashChartPeriod(\'' + id + '\', false)">' + label + '</button>';
+    // کلیک دستی: کل داشبورد با همان بازه (جدول عملکرد هم عوض شود)
+    // ورق خودکار: فقط نمودار (applyDashChartPeriod)
+    const q = [];
+    if (df) q.push('df=' + encodeURIComponent(df));
+    if (dt) q.push('dt=' + encodeURIComponent(dt));
+    q.push('cperiod=' + id);
+    return '<button type="button" data-cperiod="' + id + '" class="' + (on ? 'btn-primary' : 'btn-ghost') + ' text-xs" onclick="navigate(\'dashboard?' + q.join('&') + '\')">' + label + '</button>';
   };
 
   const chartsHtml =
@@ -511,18 +522,19 @@ Pages.dashboard = async function () {
     };
   }).filter(c => c.samples >= 1).sort((a, b) => b.samples - a.samples).slice(0, 8);
 
-  // جدول افتخار امروز
-  const todayProds = productions.filter(p => p.date === today);
+  // جدول عملکرد پرسنل — همان بازه نمودار (امروز / این ماه / امسال)
+  const perfProds = productions.filter(p => inChartPeriod(p.date, cperiod));
   const board = {};
-  todayProds.forEach(p => {
-    const n = p.producer_name || 'نامشخص';
+  perfProds.forEach(p => {
+    const n = (p.producer_name || '').trim() || 'بدون نام';
     if (!board[n]) board[n] = { qty: 0, weight: 0, count: 0 };
     board[n].qty += Number(p.quantity || 0);
     board[n].weight += Number(p.material_weight || 0);
     board[n].count += 1;
   });
-  const leaderboard = Object.entries(board).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5);
-  const todayScores = scores.filter(s => s.day === today);
+  const leaderboard = Object.entries(board).sort((a, b) => b[1].qty - a[1].qty).slice(0, 10);
+  const periodPerfLabel = cperiod === 'day' ? 'امروز' : cperiod === 'month' ? 'این ماه' : 'امسال';
+  const todayScores = scores.filter(s => (s.day || s.date) === today);
   const scoreOf = (name) => {
     const rows = todayScores.filter(s => s.personnel_name === name);
     if (!rows.length) return null;
@@ -589,7 +601,7 @@ Pages.dashboard = async function () {
     <div class="grid lg:grid-cols-2 gap-6 mb-8">
       <div class="glass-card rounded-2xl p-5">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <h2 class="font-semibold">🏆 افتخار و نمره شیفت امروز</h2>
+          <h2 class="font-semibold">🏆 عملکرد پرسنل — ${periodPerfLabel}</h2>
           <div class="flex gap-2 flex-wrap">
             ${Auth.isAdmin() ? `<button class="btn-secondary text-xs" onclick="Pages.scoreStaffForm()">نمره‌دهی</button>` : ''}
             <button class="btn-ghost text-xs" onclick="navigate('league')">جدول لیگ</button>
@@ -606,11 +618,12 @@ Pages.dashboard = async function () {
                 <span class="flex-1 font-medium truncate">${name}</span>
                 <span class="text-slate-400 text-xs">${s.count} رکورد</span>
                 <span class="text-brand-300 font-medium">${fmtNum(s.qty)}</span>
+                <span class="text-cyan-300 text-xs">${fmtNum(s.weight)}</span>
                 <span class="text-xs ${sc ? (sc.score>=8?'text-brand-300':sc.score>=5?'text-amber-300':'text-red-300') : 'text-slate-600'}">${sc ? ('⭐' + sc.score) : '—'}</span>
               </div>`;
             }).join('')}
           </div>
-        ` : `<p class="text-slate-500 text-sm mb-3">امروز هنوز تولیدی ثبت نشده · ${today}</p>`}
+        ` : `<p class="text-slate-500 text-sm mb-3">در بازه «${periodPerfLabel}» تولیدی با نام تولیدکننده نیست · ${today}</p>`}
         ${scoreBoard.length ? `
           <div class="border-t border-slate-700/50 pt-3 mt-2">
             <div class="text-xs text-slate-400 mb-2">نمرات ثبت‌شده امروز</div>
