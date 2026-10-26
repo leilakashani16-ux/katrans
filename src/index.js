@@ -509,6 +509,15 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     quantity REAL NOT NULL DEFAULT 0
   )`).run();
 
+  await db.prepare(`CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    body TEXT NOT NULL,
+    username TEXT,
+    full_name TEXT,
+    role TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+
 
   // seed a few general items if empty
   try {

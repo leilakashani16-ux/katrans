@@ -1023,26 +1023,56 @@ Pages.startDashChartRotate = function () {
       var modalRoot = document.getElementById('modal-root');
       if (modalRoot && modalRoot.querySelector('.modal')) return;
       var order = ['day', 'month', 'year'];
-      var h = location.hash || '';
-      var cur = 'day';
-      var df = '';
-      var dt = '';
-      try {
-        var q = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
-        var sp = new URLSearchParams(q);
-        cur = sp.get('cperiod') || 'day';
-        df = sp.get('df') || '';
-        dt = sp.get('dt') || '';
-      } catch (e2) {}
+      var cur = (window.__dashCperiod || 'day');
       var ix = order.indexOf(cur);
       var next = order[(ix + 1) % 3];
-      var parts = ['cperiod=' + next];
-      if (df) parts.push('df=' + encodeURIComponent(df));
-      if (dt) parts.push('dt=' + encodeURIComponent(dt));
-      if (typeof navigate === 'function') navigate('dashboard?' + parts.join('&'));
+      if (typeof Pages.applyDashChartPeriod === 'function') {
+        Pages.applyDashChartPeriod(next, true);
+      }
     } catch (e3) {}
   }, 10000);
 };
+
+/** فقط نمودارها را عوض می‌کند — کل صفحه رفرش نمی‌شود */
+Pages.applyDashChartPeriod = function (cperiod, fromAuto) {
+  if (!window.__dashChartBuild) return;
+  if (cperiod !== 'day' && cperiod !== 'month' && cperiod !== 'year') cperiod = 'day';
+  window.__dashCperiod = cperiod;
+  try {
+    var h = location.hash || '#dashboard';
+    var base = h.split('?')[0] || '#dashboard';
+    var sp = new URLSearchParams(h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '');
+    sp.set('cperiod', cperiod);
+    var nextHash = base.replace(/^#/, '') + '?' + sp.toString();
+    if ((location.hash || '').replace(/^#/, '') !== nextHash) {
+      // بدون navigate — فقط hash
+      history.replaceState(null, '', '#' + nextHash);
+    }
+  } catch (e) {}
+  // آپدیت دکمه‌های فعال
+  try {
+    document.querySelectorAll('[data-cperiod]').forEach(function (btn) {
+      var on = btn.getAttribute('data-cperiod') === cperiod;
+      btn.className = (on ? 'btn-primary' : 'btn-ghost') + ' text-xs';
+    });
+    var hint = document.getElementById('chart-auto-hint');
+    if (hint) {
+      var labels = { day: 'امروز', month: 'این ماه', year: 'امسال' };
+      hint.textContent = (fromAuto ? 'ورق خودکار · ' : '') + 'الان: ' + (labels[cperiod] || cperiod);
+    }
+  } catch (e2) {}
+  var wrap = document.getElementById('dash-charts-wrap');
+  if (!wrap) return;
+  var html = window.__dashChartBuild(cperiod);
+  wrap.innerHTML = html;
+  var charts = document.getElementById('dash-charts');
+  if (charts) {
+    charts.classList.remove('chart-slide-in');
+    void charts.offsetWidth;
+    charts.classList.add('chart-slide-in');
+  }
+};
+
 
 Pages.dashboard = async function () {
   // Parallel fetch — was serial (biggest client latency)
@@ -1075,18 +1105,19 @@ Pages.dashboard = async function () {
 
   // محدوده نمودار: روز=فقط امروز · ماه=همین ماه · سال=همین سال
   const todayForChart = todayJalali();
-  const inChartPeriod = (dateStr) => {
+  const inChartPeriod = (dateStr, mode) => {
+    mode = mode || cperiod;
     if (!dateStr) return false;
     const s = String(dateStr);
-    if (cperiod === 'day') return s === todayForChart;
-    if (cperiod === 'month') return s.slice(0, 7) === todayForChart.slice(0, 7);
-    if (cperiod === 'year') return s.slice(0, 4) === todayForChart.slice(0, 4);
+    if (mode === 'day') return s === todayForChart;
+    if (mode === 'month') return s.slice(0, 7) === todayForChart.slice(0, 7);
+    if (mode === 'year') return s.slice(0, 4) === todayForChart.slice(0, 4);
     return true;
   };
   // دادهٔ مخصوص نمودار (کارت‌های خلاصه همچنان بازه فیلتر تاریخ را دارند)
-  const chartProductions = productions.filter((p) => inChartPeriod(p.date));
-  const chartEntries = entries.filter((e) => inChartPeriod(e.date));
-  const chartWastes = wastes.filter((w) => inChartPeriod(w.date));
+  const chartProductions = productions.filter((p) => inChartPeriod(p.date, cperiod));
+  const chartEntries = entries.filter((e) => inChartPeriod(e.date, cperiod));
+  const chartWastes = wastes.filter((w) => inChartPeriod(w.date, cperiod));
 
   const totalWeight = productions.reduce((s, p) => s + Number(p.material_weight || 0), 0);
   const totalQty = productions.reduce((s, p) => s + Number(p.quantity || 0), 0);
@@ -1113,6 +1144,15 @@ Pages.dashboard = async function () {
   };
 
   const COLORS = ['#1a9b55', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#84cc16'];
+  window.__dashRaw = {
+    productions: productions,
+    entries: entries,
+    wastes: wastes,
+    stock: stock,
+    today: todayForChart,
+    COLORS: COLORS
+  };
+  window.__dashCperiod = cperiod;
 
   const matConsume = {};
   chartProductions.forEach(p => {
@@ -1250,11 +1290,7 @@ Pages.dashboard = async function () {
 
   const periodChip = (id, label) => {
     const on = cperiod === id;
-    const q = [];
-    if (df) q.push('df=' + encodeURIComponent(df));
-    if (dt) q.push('dt=' + encodeURIComponent(dt));
-    q.push('cperiod=' + id);
-    return '<button type="button" class="' + (on ? 'btn-primary' : 'btn-ghost') + ' text-xs" onclick="navigate(\'dashboard?' + q.join('&') + '\')">' + label + '</button>';
+    return '<button type="button" data-cperiod="' + id + '" class="' + (on ? 'btn-primary' : 'btn-ghost') + ' text-xs" onclick="Pages.applyDashChartPeriod(\'' + id + '\', false)">' + label + '</button>';
   };
 
   const chartsHtml =
@@ -1267,7 +1303,7 @@ Pages.dashboard = async function () {
     '</div>' +
     '<span class="text-[10px] text-slate-500" id="chart-auto-hint">ورق خودکار با انیمیشن · الان: ' + (periodLabels[cperiod] || '') + '</span>' +
     '</div>' +
-    '<div class="grid lg:grid-cols-2 gap-6 mb-8 chart-slide-in" id="dash-charts">' +
+    '<div id="dash-charts-wrap"><div class="grid lg:grid-cols-2 gap-6 mb-8 chart-slide-in" id="dash-charts">' +
     barCard('🍢 تعداد تولید محصولات', 'در بازه فیلتر · تجمیع ' + (periodLabels[cperiod] || ''), productItems, maxProdQty) +
     (trendQtyItems.length ? barCard('📈 تعداد تولید — ' + (periodLabels[cperiod] || ''), 'جمع تعداد در هر ' + (cperiod === 'day' ? 'روز' : cperiod === 'month' ? 'ماه' : 'سال'), trendQtyItems, maxTrendQty) : '') +
     donutCard('📊 سهم تعداد محصولات', 'درصد از کل تعداد تولید', productItems, sumProdQty, (it) => fmtNum(it.value) + ' عدد') +
@@ -1280,7 +1316,167 @@ Pages.dashboard = async function () {
         (periodLabels[cperiod] || '') +
         ') تولیدی ثبت نشده — نمودار خالی است</div>'
       : '') +
-    '</div>';
+    '</div></div>';
+  window.__dashChartBuild = function (mode) {
+    var raw = window.__dashRaw;
+    if (!raw) return '<div class="text-slate-500 text-sm p-4">داده نمودار نیست</div>';
+    var COLORS = raw.COLORS || [];
+    var today = raw.today;
+    var labels = { day: 'امروز', month: 'این ماه', year: 'امسال' };
+    var periodLabels = { day: 'روزانه', month: 'ماهانه', year: 'سالانه' };
+    function inP(d) {
+      if (!d) return false;
+      var s = String(d);
+      if (mode === 'day') return s === today;
+      if (mode === 'month') return s.slice(0, 7) === today.slice(0, 7);
+      if (mode === 'year') return s.slice(0, 4) === today.slice(0, 4);
+      return true;
+    }
+    var prods = (raw.productions || []).filter(function (p) { return inP(p.date); });
+    var ents = (raw.entries || []).filter(function (e) { return inP(e.date); });
+    var wsts = (raw.wastes || []).filter(function (w) { return inP(w.date); });
+    var stock = raw.stock || [];
+    function unitOf(name) {
+      var m = stock.find(function (x) { return x.name === name; });
+      return (m && m.unit) ? m.unit : 'کیلوگرم';
+    }
+    function unitShort(u) {
+      if (!u) return '';
+      if (String(u).includes('عدد')) return 'عدد';
+      if (String(u).includes('کیلو')) return 'کیلو';
+      return u;
+    }
+    var prodQty = {};
+    prods.forEach(function (p) {
+      var n = p.product_name || 'نامشخص';
+      prodQty[n] = (prodQty[n] || 0) + Number(p.quantity || 0);
+    });
+    var topProducts = Object.entries(prodQty).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
+    var sumProdQty = topProducts.reduce(function (s, x) { return s + x[1]; }, 0) || 1;
+    var productItems = topProducts.map(function (x, i) {
+      return { label: x[0], value: x[1], color: COLORS[i % COLORS.length] };
+    });
+    var maxProdQty = topProducts.length ? topProducts[0][1] : 1;
+    var pStats = {};
+    prods.forEach(function (p) {
+      var n = p.producer_name || 'نامشخص';
+      if (!pStats[n]) pStats[n] = { count: 0, weight: 0 };
+      pStats[n].count++;
+      pStats[n].weight += Number(p.material_weight || 0);
+    });
+    var staffList = Object.entries(pStats).sort(function (a, b) { return b[1].weight - a[1].weight; }).slice(0, 7);
+    var sumStaff = staffList.reduce(function (s, x) { return s + x[1].weight; }, 0) || 1;
+    var staffItems = staffList.map(function (x, i) {
+      return { label: x[0], value: x[1].weight, color: COLORS[i % COLORS.length], count: x[1].count };
+    });
+    var byUser = {};
+    ents.concat(prods).concat(wsts).forEach(function (r) {
+      var u = r.created_by || 'نامشخص';
+      byUser[u] = (byUser[u] || 0) + 1;
+    });
+    var userList = Object.entries(byUser).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 7);
+    var sumUser = userList.reduce(function (s, x) { return s + x[1]; }, 0) || 1;
+    var userItems = userList.map(function (x, i) {
+      return { label: x[0], value: x[1], color: COLORS[i % COLORS.length] };
+    });
+    var stockGroups = [
+      { label: 'عادی', value: stock.filter(function (m) { return m.status === 'عادی'; }).length, color: '#1a9b55' },
+      { label: 'هشدار', value: stock.filter(function (m) { return m.status === 'هشدار'; }).length, color: '#f59e0b' },
+      { label: 'تمام شد', value: stock.filter(function (m) { return m.status === 'تمام شد'; }).length, color: '#ef4444' }
+    ].filter(function (x) { return x.value > 0; });
+    var sumStockG = stockGroups.reduce(function (s, x) { return s + x.value; }, 0) || 1;
+    var periodKeyOf = function (dateStr) {
+      if (!dateStr) return '—';
+      var s = String(dateStr);
+      if (mode === 'year') return s.slice(0, 4);
+      if (mode === 'month') return s.length >= 7 ? s.slice(0, 7) : s;
+      return s;
+    };
+    var trendQty = {};
+    var trendWeight = {};
+    prods.forEach(function (p) {
+      var key = periodKeyOf(p.date);
+      trendQty[key] = (trendQty[key] || 0) + Number(p.quantity || 0);
+      if (unitShort(unitOf(p.material_name)) === 'عدد') return;
+      trendWeight[key] = (trendWeight[key] || 0) + Number(p.material_weight || 0);
+    });
+    var sliceN = mode === 'day' ? 14 : mode === 'month' ? 12 : 10;
+    var dayKeys = Object.keys(trendWeight).sort().slice(-sliceN);
+    var dayItems = dayKeys.map(function (d, i) {
+      return { label: d, value: trendWeight[d], color: COLORS[i % COLORS.length] };
+    });
+    var sumDay = dayItems.reduce(function (s, it) { return s + it.value; }, 0) || 1;
+    var trendQtyKeys = Object.keys(trendQty).sort().slice(-sliceN);
+    var trendQtyItems = trendQtyKeys.map(function (k, i) {
+      return { label: k, value: trendQty[k], color: COLORS[i % COLORS.length] };
+    });
+    var maxTrendQty = trendQtyItems.length ? Math.max.apply(null, trendQtyItems.map(function (it) { return it.value; })) : 1;
+
+    function donutGradient(items, total) {
+      if (!items.length) return '#1e293b';
+      var acc = 0;
+      var parts = items.map(function (it) {
+        var start = (acc / total) * 360;
+        acc += Number(it.value) || 0;
+        var end = (acc / total) * 360;
+        return it.color + ' ' + start + 'deg ' + end + 'deg';
+      });
+      return 'conic-gradient(' + parts.join(', ') + ')';
+    }
+    function donutCard(title, sub, items, total, fmtFn) {
+      if (!items.length) {
+        return '<div class="glass-card rounded-2xl p-5 min-h-[220px]"><h2 class="font-semibold mb-2">' + title + '</h2><p class="text-slate-500 text-sm">داده‌ای نیست</p></div>';
+      }
+      var grad = donutGradient(items, total);
+      var legend = items.map(function (it) {
+        var val = fmtFn ? fmtFn(it) : it.value;
+        return '<div class="flex items-center gap-2 text-xs mb-1.5">' +
+          '<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:' + it.color + '"></span>' +
+          '<span class="truncate flex-1 text-slate-300">' + it.label + '</span>' +
+          '<span class="text-slate-100 font-medium whitespace-nowrap">' + val + '</span></div>';
+      }).join('');
+      return '<div class="glass-card rounded-2xl p-5">' +
+        '<h2 class="font-semibold mb-0.5">' + title + '</h2>' +
+        '<p class="text-xs text-slate-400 mb-4">' + sub + '</p>' +
+        '<div class="flex flex-col sm:flex-row items-center gap-5">' +
+        '<div class="relative w-36 h-36 flex-shrink-0">' +
+        '<div class="w-full h-full rounded-full shadow-lg" style="background:' + grad + '"></div>' +
+        '<div class="absolute inset-[22%] rounded-full bg-slate-900 border border-slate-700/40"></div>' +
+        '</div><div class="flex-1 w-full min-w-0">' + legend + '</div></div></div>';
+    }
+    function barCard(title, sub, items, maxVal) {
+      if (!items.length) {
+        return '<div class="glass-card rounded-2xl p-5 min-h-[220px]"><h2 class="font-semibold mb-2">' + title + '</h2><p class="text-slate-500 text-sm">داده‌ای نیست</p></div>';
+      }
+      var rows = items.map(function (it) {
+        var pct = maxVal > 0 ? Math.round((it.value / maxVal) * 100) : 0;
+        return '<div class="mb-2.5">' +
+          '<div class="flex justify-between text-xs mb-1 gap-2">' +
+          '<span class="text-slate-300 truncate">' + it.label + '</span>' +
+          '<span class="text-slate-100 font-medium whitespace-nowrap">' + fmtNum(it.value) + '</span></div>' +
+          '<div class="h-2 rounded-full bg-slate-800 overflow-hidden">' +
+          '<div class="h-full rounded-full" style="width:' + pct + '%;background:' + it.color + '"></div>' +
+          '</div></div>';
+      }).join('');
+      return '<div class="glass-card rounded-2xl p-5">' +
+        '<h2 class="font-semibold mb-0.5">' + title + '</h2>' +
+        '<p class="text-xs text-slate-400 mb-4">' + sub + '</p>' + rows + '</div>';
+    }
+    var emptyNote = prods.length === 0
+      ? '<div class="glass-card rounded-2xl p-6 lg:col-span-2 text-center text-slate-400 text-sm">در این بازه (' + (labels[mode] || '') + ') تولیدی ثبت نشده — نمودار خالی است</div>'
+      : '';
+    return '<div class="grid lg:grid-cols-2 gap-6 mb-8 chart-slide-in" id="dash-charts">' +
+      barCard('🍢 تعداد تولید محصولات', 'بازه: ' + (labels[mode] || ''), productItems, maxProdQty) +
+      (trendQtyItems.length ? barCard('📈 تعداد تولید — ' + (periodLabels[mode] || ''), 'تجمیع ' + (mode === 'day' ? 'روز' : mode === 'month' ? 'ماه' : 'سال'), trendQtyItems, maxTrendQty) : '') +
+      donutCard('📊 سهم تعداد محصولات', 'درصد از کل', productItems, sumProdQty, function (it) { return fmtNum(it.value) + ' عدد'; }) +
+      donutCard('📦 وضعیت موجودی', 'تعداد اقلام', stockGroups, sumStockG, function (it) { return it.value + ' قلم'; }) +
+      donutCard('👨‍🍳 سهم پرسنل', 'وزن مصرف', staffItems, sumStaff, function (it) { return fmtNum(it.value) + ' · ' + (it.count || 0) + ' رکورد'; }) +
+      donutCard('✍️ ثبت‌کننده‌ها', 'ورود + تولید + ضایعات', userItems, sumUser, function (it) { return it.value + ' رکورد'; }) +
+      (dayItems.length ? donutCard('📅 مصرف کیلویی — ' + (periodLabels[mode] || ''), 'مواد کیلویی', dayItems, sumDay, function (it) { return fmtNum(it.value) + ' کیلو'; }) : '') +
+      emptyNote +
+      '</div>';
+  };
+
 
 
   // —— ویژگی‌های هوشمند ——
@@ -6554,7 +6750,7 @@ window.Pages = Pages;
  */
 (function () {
   const SEEN_KEY = 'kitchen_chat_seen_id';
-  const POLL_MS = 8000;
+  const POLL_MS = 7000;
 
   function me() {
     try {
@@ -6597,35 +6793,58 @@ window.Pages = Pages;
   function notifyBrowser(title, body) {
     try {
       if (!('Notification' in window)) return;
-      if (Notification.permission === 'granted') {
-        new Notification(title, {
-          body: body,
-          tag: 'katrans-chat',
-          renotify: true,
-          icon: 'icons/icon-192.png'
+      if (Notification.permission !== 'granted') return;
+      // موبایل: اگر ServiceWorker فعال باشد از آن استفاده کن
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(function (reg) {
+          if (reg.showNotification) {
+            reg.showNotification(title, {
+              body: body,
+              tag: 'katrans-chat',
+              renotify: true,
+              icon: 'icons/icon-192.png',
+              badge: 'icons/icon-192.png'
+            }).catch(function () {
+              try { new Notification(title, { body: body, tag: 'katrans-chat' }); } catch (_) {}
+            });
+          } else {
+            try { new Notification(title, { body: body, tag: 'katrans-chat' }); } catch (_) {}
+          }
         });
+      } else {
+        new Notification(title, { body: body, tag: 'katrans-chat', icon: 'icons/icon-192.png' });
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('notify', e);
+    }
   }
 
   async function ensureNotifyPermission() {
-    if (!('Notification' in window)) return false;
+    if (!('Notification' in window)) {
+      toast('این مرورگر نوتیفیکیشن را پشتیبانی نمی‌کند', 'error');
+      return false;
+    }
     if (Notification.permission === 'granted') return true;
-    if (Notification.permission === 'denied') return false;
+    if (Notification.permission === 'denied') {
+      toast('نوتیف مسدود است — در تنظیمات مرورگر/گوشی برای این سایت Allow کنید', 'error');
+      return false;
+    }
+    // باید از gest کاربر صدا زده شود
     try {
       var p = await Notification.requestPermission();
       return p === 'granted';
-    } catch (_) {
+    } catch (e) {
+      toast('درخواست نوتیف ناموفق: ' + (e.message || ''), 'error');
       return false;
     }
   }
 
   Pages.chat = async function () {
-    await ensureNotifyPermission();
     var msgs = await loadMessages();
     if (msgs.length) setSeenId(msgs[msgs.length - 1].id);
     updateBadge(0);
     var user = me();
+    var perm = ('Notification' in window) ? Notification.permission : 'unsupported';
 
     var rows = msgs
       .map(function (m) {
@@ -6655,25 +6874,31 @@ window.Pages = Pages;
       })
       .join('');
 
+    var notifyHint =
+      perm === 'granted'
+        ? '<span class="text-xs text-brand-400">نوتیف فعال است</span>'
+        : perm === 'denied'
+          ? '<span class="text-xs text-red-400">نوتیف مسدود — از تنظیمات سایت Allow کنید</span>'
+          : '<span class="text-xs text-amber-300">برای نوتیف دکمه را بزنید (روی iPhone: ابتدا Add to Home Screen)</span>';
+
     return (
       '<div class="mb-4 flex flex-wrap items-center justify-between gap-2">' +
       '<div><h1 class="text-2xl font-bold">💬 گفتگوی تیم</h1>' +
-      '<p class="text-slate-400 text-sm">پیام برای همه کاربران · با نوتیفیکیشن</p></div>' +
-      '<button type="button" class="btn-secondary text-xs" onclick="Pages.requestChatNotify()">فعال‌سازی نوتیفیکیشن</button></div>' +
+      '<p class="text-slate-400 text-sm">پیام مشترک بین همه کاربران</p></div>' +
+      '<div class="flex flex-wrap gap-2 items-center">' +
+      notifyHint +
+      '<button type="button" class="btn-secondary text-xs" onclick="Pages.requestChatNotify()">فعال‌سازی نوتیفیکیشن</button></div></div>' +
       '<div class="glass-card rounded-2xl p-3 flex flex-col" style="min-height:60vh;max-height:70vh">' +
       '<div id="chat-scroll" class="flex-1 overflow-y-auto mb-3 px-1">' +
       (rows || '<p class="text-center text-slate-500 py-10 text-sm">هنوز پیامی نیست — اولین نفر باش</p>') +
       '</div>' +
-      '<form id="chat-form" class="flex gap-2 items-end">' +
+      '<form id="chat-form" class="flex gap-2 items-end" onsubmit="event.preventDefault();Pages.sendChatMessage();return false;">' +
       '<textarea id="chat-input" class="input-field flex-1" rows="2" placeholder="پیام خود را بنویسید..." maxlength="2000"></textarea>' +
-      '<button type="submit" class="btn-primary whitespace-nowrap">ارسال</button>' +
+      '<button type="submit" class="btn-primary whitespace-nowrap" id="chat-send-btn">ارسال</button>' +
       '</form></div>'
     );
   };
 
-  // after render hooks
-  var _nav = window.navigate;
-  // bind form after page paint via Mutation / setTimeout from app - use event delegation
   document.addEventListener('submit', function (ev) {
     if (!ev.target || ev.target.id !== 'chat-form') return;
     ev.preventDefault();
@@ -6682,41 +6907,62 @@ window.Pages = Pages;
 
   Pages.requestChatNotify = async function () {
     var ok = await ensureNotifyPermission();
-    if (ok) toast('نوتیفیکیشن چت فعال شد', 'success');
-    else toast('اجازه نوتیفیکیشن داده نشد — از تنظیمات مرورگر فعال کنید', 'error');
+    if (ok) {
+      toast('نوتیفیکیشن چت فعال شد', 'success');
+      notifyBrowser('گفتگوی تیم', 'نوتیفیکیشن با موفقیت فعال شد');
+      if (typeof currentPage !== 'undefined' && currentPage === 'chat') navigate('chat');
+    }
   };
 
   Pages.sendChatMessage = async function () {
     var ta = document.getElementById('chat-input');
+    var btn = document.getElementById('chat-send-btn');
     var text = ((ta && ta.value) || '').trim();
     if (!text) return toast('پیام خالی است', 'error');
     var user = me();
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '...';
+    }
     try {
-      await DB.add('chat_messages', {
+      var payload = {
         body: text.slice(0, 2000),
         username: user.username || '',
         full_name: user.full_name || user.username || '',
         role: user.role || '',
         created_at: new Date().toISOString()
-      });
+      };
+      var id = await DB.add('chat_messages', payload);
       if (ta) ta.value = '';
       toast('ارسال شد', 'success');
+      if (id) setSeenId(id);
       if (typeof currentPage !== 'undefined' && currentPage === 'chat') {
         navigate('chat');
         setTimeout(function () {
           var sc = document.getElementById('chat-scroll');
           if (sc) sc.scrollTop = sc.scrollHeight;
-        }, 200);
+        }, 250);
       }
     } catch (e) {
-      console.error(e);
-      toast(e.message || 'خطا در ارسال', 'error');
+      console.error('chat send', e);
+      var msg = e.message || String(e);
+      if (/no such table|chat_messages/i.test(msg)) {
+        msg = 'جدول چت روی سرور نیست — Deploy جدید لازم است';
+      }
+      toast(msg || 'خطا در ارسال', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'ارسال';
+      }
     }
   };
 
   Pages.pollChat = async function () {
     try {
-      if (!window.DB || !Auth || !Auth.currentUser) return;
+      if (!window.DB) return;
+      var user = me();
+      if (!user || !user.username) return;
       var msgs = await loadMessages();
       if (!msgs.length) {
         updateBadge(0);
@@ -6727,20 +6973,16 @@ window.Pages = Pages;
       var unread = msgs.filter(function (m) {
         return Number(m.id) > seen;
       });
-      var user = me();
       var fromOthers = unread.filter(function (m) {
         return !m.username || m.username !== user.username;
       });
 
       if (typeof currentPage !== 'undefined' && currentPage === 'chat') {
-        // اگر صفحه چت باز است و پیام جدید آمده، رفرش سبک
-        var needRefresh = fromOthers.length > 0 || unread.length > 0;
-        if (needRefresh && Number(last.id) > seen) {
-          setSeenId(last.id);
-          updateBadge(0);
-          // فقط اگر کاربر در حال تایپ نیست
+        if (unread.length && Number(last.id) > seen) {
           var ta = document.getElementById('chat-input');
           var typing = ta && document.activeElement === ta && (ta.value || '').length > 0;
+          setSeenId(last.id);
+          updateBadge(0);
           if (!typing) {
             navigate('chat');
             setTimeout(function () {
@@ -6784,7 +7026,6 @@ window.Pages = Pages;
     });
   }
 
-  // بعد از ورود یک‌بار
   setTimeout(function () {
     try {
       Pages.pollChat();

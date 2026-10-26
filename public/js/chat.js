@@ -3,7 +3,7 @@
  */
 (function () {
   const SEEN_KEY = 'kitchen_chat_seen_id';
-  const POLL_MS = 8000;
+  const POLL_MS = 7000;
 
   function me() {
     try {
@@ -46,35 +46,58 @@
   function notifyBrowser(title, body) {
     try {
       if (!('Notification' in window)) return;
-      if (Notification.permission === 'granted') {
-        new Notification(title, {
-          body: body,
-          tag: 'katrans-chat',
-          renotify: true,
-          icon: 'icons/icon-192.png'
+      if (Notification.permission !== 'granted') return;
+      // موبایل: اگر ServiceWorker فعال باشد از آن استفاده کن
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(function (reg) {
+          if (reg.showNotification) {
+            reg.showNotification(title, {
+              body: body,
+              tag: 'katrans-chat',
+              renotify: true,
+              icon: 'icons/icon-192.png',
+              badge: 'icons/icon-192.png'
+            }).catch(function () {
+              try { new Notification(title, { body: body, tag: 'katrans-chat' }); } catch (_) {}
+            });
+          } else {
+            try { new Notification(title, { body: body, tag: 'katrans-chat' }); } catch (_) {}
+          }
         });
+      } else {
+        new Notification(title, { body: body, tag: 'katrans-chat', icon: 'icons/icon-192.png' });
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('notify', e);
+    }
   }
 
   async function ensureNotifyPermission() {
-    if (!('Notification' in window)) return false;
+    if (!('Notification' in window)) {
+      toast('این مرورگر نوتیفیکیشن را پشتیبانی نمی‌کند', 'error');
+      return false;
+    }
     if (Notification.permission === 'granted') return true;
-    if (Notification.permission === 'denied') return false;
+    if (Notification.permission === 'denied') {
+      toast('نوتیف مسدود است — در تنظیمات مرورگر/گوشی برای این سایت Allow کنید', 'error');
+      return false;
+    }
+    // باید از gest کاربر صدا زده شود
     try {
       var p = await Notification.requestPermission();
       return p === 'granted';
-    } catch (_) {
+    } catch (e) {
+      toast('درخواست نوتیف ناموفق: ' + (e.message || ''), 'error');
       return false;
     }
   }
 
   Pages.chat = async function () {
-    await ensureNotifyPermission();
     var msgs = await loadMessages();
     if (msgs.length) setSeenId(msgs[msgs.length - 1].id);
     updateBadge(0);
     var user = me();
+    var perm = ('Notification' in window) ? Notification.permission : 'unsupported';
 
     var rows = msgs
       .map(function (m) {
@@ -104,25 +127,31 @@
       })
       .join('');
 
+    var notifyHint =
+      perm === 'granted'
+        ? '<span class="text-xs text-brand-400">نوتیف فعال است</span>'
+        : perm === 'denied'
+          ? '<span class="text-xs text-red-400">نوتیف مسدود — از تنظیمات سایت Allow کنید</span>'
+          : '<span class="text-xs text-amber-300">برای نوتیف دکمه را بزنید (روی iPhone: ابتدا Add to Home Screen)</span>';
+
     return (
       '<div class="mb-4 flex flex-wrap items-center justify-between gap-2">' +
       '<div><h1 class="text-2xl font-bold">💬 گفتگوی تیم</h1>' +
-      '<p class="text-slate-400 text-sm">پیام برای همه کاربران · با نوتیفیکیشن</p></div>' +
-      '<button type="button" class="btn-secondary text-xs" onclick="Pages.requestChatNotify()">فعال‌سازی نوتیفیکیشن</button></div>' +
+      '<p class="text-slate-400 text-sm">پیام مشترک بین همه کاربران</p></div>' +
+      '<div class="flex flex-wrap gap-2 items-center">' +
+      notifyHint +
+      '<button type="button" class="btn-secondary text-xs" onclick="Pages.requestChatNotify()">فعال‌سازی نوتیفیکیشن</button></div></div>' +
       '<div class="glass-card rounded-2xl p-3 flex flex-col" style="min-height:60vh;max-height:70vh">' +
       '<div id="chat-scroll" class="flex-1 overflow-y-auto mb-3 px-1">' +
       (rows || '<p class="text-center text-slate-500 py-10 text-sm">هنوز پیامی نیست — اولین نفر باش</p>') +
       '</div>' +
-      '<form id="chat-form" class="flex gap-2 items-end">' +
+      '<form id="chat-form" class="flex gap-2 items-end" onsubmit="event.preventDefault();Pages.sendChatMessage();return false;">' +
       '<textarea id="chat-input" class="input-field flex-1" rows="2" placeholder="پیام خود را بنویسید..." maxlength="2000"></textarea>' +
-      '<button type="submit" class="btn-primary whitespace-nowrap">ارسال</button>' +
+      '<button type="submit" class="btn-primary whitespace-nowrap" id="chat-send-btn">ارسال</button>' +
       '</form></div>'
     );
   };
 
-  // after render hooks
-  var _nav = window.navigate;
-  // bind form after page paint via Mutation / setTimeout from app - use event delegation
   document.addEventListener('submit', function (ev) {
     if (!ev.target || ev.target.id !== 'chat-form') return;
     ev.preventDefault();
@@ -131,41 +160,62 @@
 
   Pages.requestChatNotify = async function () {
     var ok = await ensureNotifyPermission();
-    if (ok) toast('نوتیفیکیشن چت فعال شد', 'success');
-    else toast('اجازه نوتیفیکیشن داده نشد — از تنظیمات مرورگر فعال کنید', 'error');
+    if (ok) {
+      toast('نوتیفیکیشن چت فعال شد', 'success');
+      notifyBrowser('گفتگوی تیم', 'نوتیفیکیشن با موفقیت فعال شد');
+      if (typeof currentPage !== 'undefined' && currentPage === 'chat') navigate('chat');
+    }
   };
 
   Pages.sendChatMessage = async function () {
     var ta = document.getElementById('chat-input');
+    var btn = document.getElementById('chat-send-btn');
     var text = ((ta && ta.value) || '').trim();
     if (!text) return toast('پیام خالی است', 'error');
     var user = me();
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '...';
+    }
     try {
-      await DB.add('chat_messages', {
+      var payload = {
         body: text.slice(0, 2000),
         username: user.username || '',
         full_name: user.full_name || user.username || '',
         role: user.role || '',
         created_at: new Date().toISOString()
-      });
+      };
+      var id = await DB.add('chat_messages', payload);
       if (ta) ta.value = '';
       toast('ارسال شد', 'success');
+      if (id) setSeenId(id);
       if (typeof currentPage !== 'undefined' && currentPage === 'chat') {
         navigate('chat');
         setTimeout(function () {
           var sc = document.getElementById('chat-scroll');
           if (sc) sc.scrollTop = sc.scrollHeight;
-        }, 200);
+        }, 250);
       }
     } catch (e) {
-      console.error(e);
-      toast(e.message || 'خطا در ارسال', 'error');
+      console.error('chat send', e);
+      var msg = e.message || String(e);
+      if (/no such table|chat_messages/i.test(msg)) {
+        msg = 'جدول چت روی سرور نیست — Deploy جدید لازم است';
+      }
+      toast(msg || 'خطا در ارسال', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'ارسال';
+      }
     }
   };
 
   Pages.pollChat = async function () {
     try {
-      if (!window.DB || !Auth || !Auth.currentUser) return;
+      if (!window.DB) return;
+      var user = me();
+      if (!user || !user.username) return;
       var msgs = await loadMessages();
       if (!msgs.length) {
         updateBadge(0);
@@ -176,20 +226,16 @@
       var unread = msgs.filter(function (m) {
         return Number(m.id) > seen;
       });
-      var user = me();
       var fromOthers = unread.filter(function (m) {
         return !m.username || m.username !== user.username;
       });
 
       if (typeof currentPage !== 'undefined' && currentPage === 'chat') {
-        // اگر صفحه چت باز است و پیام جدید آمده، رفرش سبک
-        var needRefresh = fromOthers.length > 0 || unread.length > 0;
-        if (needRefresh && Number(last.id) > seen) {
-          setSeenId(last.id);
-          updateBadge(0);
-          // فقط اگر کاربر در حال تایپ نیست
+        if (unread.length && Number(last.id) > seen) {
           var ta = document.getElementById('chat-input');
           var typing = ta && document.activeElement === ta && (ta.value || '').length > 0;
+          setSeenId(last.id);
+          updateBadge(0);
           if (!typing) {
             navigate('chat');
             setTimeout(function () {
@@ -233,7 +279,6 @@
     });
   }
 
-  // بعد از ورود یک‌بار
   setTimeout(function () {
     try {
       Pages.pollChat();
