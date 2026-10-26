@@ -341,6 +341,32 @@ window.jalaliInput = jalaliInput;
 window.exportToExcel = exportToExcel;
 window.downloadJSON = downloadJSON;
 window.exportToPDF = exportToPDF;
+
+/**
+ * کد بعدی خودکار: P001, M012, S005, F001, T001
+ * prefix بدون عدد؛ از روی لیست موجود بزرگ‌ترین عدد را می‌گیرد
+ */
+async function nextCode(store, prefix, field) {
+  field = field || 'code';
+  prefix = String(prefix || '').toUpperCase();
+  var list = [];
+  try { list = (await DB.getAll(store)) || []; } catch (e) { list = []; }
+  var max = 0;
+  var re = new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d+)$', 'i');
+  list.forEach(function (item) {
+    var c = String(item[field] || '').trim();
+    var m = c.match(re);
+    if (m) {
+      var n = parseInt(m[1], 10);
+      if (!isNaN(n) && n > max) max = n;
+    }
+  });
+  var next = max + 1;
+  var pad = next < 1000 ? 3 : String(next).length;
+  return prefix + String(next).padStart(pad, '0');
+}
+window.nextCode = nextCode;
+
 window.confirmAction = confirmAction;
 window.filterByDateAndSearch = filterByDateAndSearch;
 window.printReceipt = printReceipt;

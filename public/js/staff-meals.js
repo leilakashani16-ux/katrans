@@ -149,16 +149,22 @@
     if (id) item = (await DB.getById('personnel', id)) || item;
     const team = item.team || defaultTeam || 'executive';
     const shift = item.shift_type || (team === 'executive' ? 'full' : 'single');
+    function teamPrefix(t) {
+      if (t === 'sales') return 'F';
+      if (t === 'transport') return 'T';
+      return 'S';
+    }
+    if (!id && typeof nextCode === 'function') {
+      item.code = await nextCode('personnel', teamPrefix(team));
+    }
 
     showModal(
       '<div class="modal"><h3 class="text-lg font-bold mb-4">' +
         (id ? 'ویرایش پرسنل' : 'افزودن پرسنل') +
         '</h3><form id="person-form" class="space-y-3">' +
-        '<div><label class="text-xs text-slate-400">کد</label><input name="code" class="input-field" value="' +
+        '<div><label class="text-xs text-slate-400">کد (خودکار)</label><input name="code" id="person-code" class="input-field" value="' +
         (item.code || '') +
-        '" required ' +
-        (id ? 'readonly' : '') +
-        ' /></div>' +
+        '" required readonly /></div>' +
         '<div><label class="text-xs text-slate-400">نام</label><input name="name" class="input-field" value="' +
         (item.name || '') +
         '" required /></div>' +
@@ -188,6 +194,18 @@
         '</form></div>'
     );
 
+    if (!id) {
+      var teamSel = document.querySelector('#person-form select[name="team"]');
+      if (teamSel) {
+        teamSel.addEventListener('change', async function () {
+          if (typeof nextCode !== 'function') return;
+          var p = teamPrefix(teamSel.value);
+          var codeEl = document.getElementById('person-code');
+          if (codeEl) codeEl.value = await nextCode('personnel', p);
+        });
+      }
+    }
+
     document.getElementById('person-form').onsubmit = async function (ev) {
       ev.preventDefault();
       const btn = ev.target.querySelector('button[type="submit"]');
@@ -200,6 +218,9 @@
         data.active = 1;
         data.team = data.team || 'executive';
         data.shift_type = data.shift_type || 'full';
+        if (!data.code && typeof nextCode === 'function') {
+          data.code = await nextCode('personnel', teamPrefix(data.team));
+        }
         if (id) {
           data.id = id;
           const prev = await DB.getById('personnel', id);

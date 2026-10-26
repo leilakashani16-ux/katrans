@@ -1141,13 +1141,14 @@ Pages.showMaterialForm = async function (id) {
   if (!Auth.isAdmin()) return;
   let item = { code: '', name: '', unit: 'کیلوگرم', secondary_unit: '', unit_factor: '', initial_stock: 0, min_alert: 0, description: '', active: true };
   if (id) item = await DB.getById('materials', id) || item;
+  else if (typeof nextCode === 'function') item.code = await nextCode('materials', 'M');
 
   showModal(`
     <div class="modal">
       <h3 class="text-lg font-bold mb-4">${id ? 'ویرایش ماده' : 'افزودن ماده اولیه'}</h3>
       <form id="mat-form" class="space-y-3">
         <div class="grid grid-cols-2 gap-3">
-          <div><label class="text-xs text-slate-400">کد</label><input name="code" class="input-field" value="${item.code||''}" required ${id?'readonly':''} /></div>
+          <div><label class="text-xs text-slate-400">کد (خودکار)</label><input name="code" class="input-field" value="${item.code||''}" required readonly /></div>
           <div><label class="text-xs text-slate-400">واحد اصلی</label><input name="unit" class="input-field" value="${item.unit||'کیلوگرم'}" /></div>
         </div>
         <div><label class="text-xs text-slate-400">نام</label><input name="name" class="input-field" value="${item.name||''}" required /></div>
@@ -1235,20 +1236,37 @@ Pages.showProductForm = async function (id) {
   const materials = await DB.getAll('materials');
   let item = { code: '', name: '', weight_per_unit: 100, material_name: '', description: '', remainder_type: 'حمل به روز بعد', remainder_note: '', active: true };
   if (id) item = await DB.getById('products', id) || item;
+  else if (typeof nextCode === 'function') item.code = await nextCode('products', 'P');
+
+  let hasRecipe = false;
+  try {
+    const recipes = (await DB.getAll('recipes')) || [];
+    hasRecipe = recipes.some(r => r.product_name === item.name);
+  } catch (e) {}
+  const isMultiDefault = hasRecipe || item.material_name === 'ترکیبی' || !item.material_name;
 
   showModal(`
-    <div class="modal">
+    <div class="modal" style="max-width:36rem">
       <h3 class="text-lg font-bold mb-4">${id ? 'ویرایش محصول' : 'افزودن محصول'}</h3>
       <form id="proddef-form" class="space-y-3">
         <div class="grid grid-cols-2 gap-3">
-          <div><label class="text-xs text-slate-400">کد</label><input name="code" class="input-field" value="${item.code||''}" required ${id?'readonly':''} /></div>
+          <div><label class="text-xs text-slate-400">کد (خودکار)</label><input name="code" class="input-field" value="${item.code||''}" required readonly /></div>
           <div><label class="text-xs text-slate-400">وزن هر عدد (گرم)</label><input name="weight_per_unit" type="number" class="input-field" value="${item.weight_per_unit||100}" required /></div>
         </div>
-        <div><label class="text-xs text-slate-400">نام محصول</label><input name="name" class="input-field" value="${item.name||''}" required /></div>
+        <div><label class="text-xs text-slate-400">نام محصول</label><input name="name" class="input-field" value="${item.name||''}" required placeholder="مثلاً خورشت قورمه" /></div>
         <div>
+          <label class="text-xs text-slate-400">نوع مصرف مواد</label>
+          <select id="prod-consume-type" class="input-field">
+            <option value="single" ${!isMultiDefault ? 'selected' : ''}>تک‌ماده‌ای (جوجه، کباب، …)</option>
+            <option value="multi" ${isMultiDefault ? 'selected' : ''}>چندماده‌ای — دستور ساخت (قورمه، برنج، …)</option>
+          </select>
+          <p class="text-[10px] text-slate-500 mt-1">چندماده‌ای: بعد از ذخیره از دکمه «دستور» مواد را تعریف کنید. موجودی فقط از روی دستور/تولید کم می‌شود — دوبار کم نمی‌شود.</p>
+        </div>
+        <div id="prod-single-mat">
           <label class="text-xs text-slate-400">ماده اولیه مصرفی</label>
-          <select name="material_name" class="input-field" required>
-            ${materials.map(m => `<option value="${m.name}" ${item.material_name===m.name?'selected':''}>${m.name}</option>`).join('')}
+          <select name="material_name" id="prod-mat-select" class="input-field">
+            <option value="">— انتخاب —</option>
+            ${materials.filter(m=>m.active!==false&&m.active!==0).map(m => `<option value="${m.name}" ${item.material_name===m.name?'selected':''}>${m.name}</option>`).join('')}
           </select>
         </div>
         <div>
@@ -1267,6 +1285,21 @@ Pages.showProductForm = async function (id) {
     </div>
   `);
 
+  const typeSel = document.getElementById('prod-consume-type');
+  const singleBox = document.getElementById('prod-single-mat');
+  const matSel = document.getElementById('prod-mat-select');
+  function syncType() {
+    if (typeSel.value === 'multi') {
+      singleBox.style.opacity = '0.5';
+      matSel.removeAttribute('required');
+    } else {
+      singleBox.style.opacity = '1';
+      matSel.setAttribute('required', 'required');
+    }
+  }
+  typeSel.onchange = syncType;
+  syncType();
+
   document.getElementById('proddef-form').onsubmit = async (ev) => {
     ev.preventDefault();
     const btn = ev.target.querySelector('button[type="submit"]');
@@ -1275,11 +1308,21 @@ Pages.showProductForm = async function (id) {
       const data = Object.fromEntries(new FormData(ev.target).entries());
       data.weight_per_unit = Number(data.weight_per_unit);
       data.active = 1;
+      if (typeSel.value === 'multi') {
+        data.material_name = data.material_name || 'ترکیبی';
+      } else if (!data.material_name) {
+        toast('برای محصول تک‌ماده‌ای، ماده را انتخاب کنید', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'ذخیره'; }
+        return;
+      }
       if (id) { data.id = id; await DB.put('products', data); }
       else await DB.add('products', data);
-      toast('ذخیره شد', 'success');
+      toast(typeSel.value === 'multi' ? 'ذخیره شد — از «دستور» مواد را تعریف کنید' : 'ذخیره شد', 'success');
       closeModal();
       navigate('products');
+      if (!id && typeSel.value === 'multi' && data.name && typeof Pages.editRecipe === 'function') {
+        setTimeout(function () { Pages.editRecipe(data.name); }, 400);
+      }
     } catch (e) {
       console.error(e);
       toast(e.message || 'خطا در ذخیره محصول', 'error');
@@ -1434,6 +1477,7 @@ Pages.showSupplierForm = async function (id) {
   if (!Auth.isAdmin() && !Auth.canEntry()) return toast('دسترسی ندارید', 'error');
   let item = { code: '', name: '', phone: '', notes: '', active: 1 };
   if (id) item = await DB.getById('suppliers', id) || item;
+  else if (typeof nextCode === 'function') item.code = await nextCode('suppliers', 'SP');
 
   showModal(`
     <div class="modal">

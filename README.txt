@@ -1,13 +1,16 @@
-رفع Service Worker خراب (ERR_FAILED روی همه JSها)
+کد خودکار + فرم محصول تک/چندماده‌ای (بدون کم شدن دوبار موجودی)
 
 جایگزین:
-public/sw.js
-public/index.html
+public/js/bundle.js (اصلی برای سایت)
+public/js/pages.js
+public/js/utils.js
+public/js/staff-meals.js
 
-Deploy
+کدها:
+محصول P001...
+ماده M001...
+اجرایی S001...
+فروش F001...
+ترابری T001...
 
-روی PC حتماً:
-1) F12 → Application → Service Workers → Unregister
-2) Application → Cache Storage → همه را Delete
-3) Ctrl+Shift+R
-4) صفحه را ببند و دوباره باز کن
+قورمه: نوع چندماده‌ای → ذخیره → دستور ساخت
