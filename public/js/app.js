@@ -69,6 +69,12 @@ async function navigate(page) {
       content.classList.remove('fade-in');
       void content.offsetWidth;
       content.classList.add('fade-in');
+      if (pure === 'dashboard' && typeof Pages.startDashChartRotate === 'function') {
+        Pages.startDashChartRotate();
+      } else if (window.__dashChartTimer) {
+        try { clearInterval(window.__dashChartTimer); } catch (e) {}
+        window.__dashChartTimer = null;
+      }
     } else {
       content.innerHTML = '<p class="text-red-400">صفحه یافت نشد</p>';
     }
@@ -175,17 +181,46 @@ function enableCloudDB() {
 
 async function probeCloud(retries) {
   let last = { ok: false, error: 'no attempt' };
-  for (let i = 0; i < (retries || 3); i++) {
+  const n = retries || 5;
+  for (let i = 0; i < n; i++) {
     try {
       last = await Api.health();
       if (last && last.ok) return last;
+      last = last || { ok: false, error: 'پاسخ نامعتبر' };
     } catch (e) {
       last = { ok: false, error: e.message || String(e) };
     }
-    await new Promise(r => setTimeout(r, 400 * (i + 1)));
+    // فاصله بیشتر برای اینترنت کند (مخابرات)
+    await new Promise(r => setTimeout(r, 800 * (i + 1)));
   }
   return last;
 }
+
+/** تلاش دوباره برای اتصال ابری از صفحه ورود یا داخل اپ */
+window.retryCloudConnect = async function () {
+  const statusEl = document.getElementById('cloud-status');
+  if (statusEl) statusEl.innerHTML = '<span class="text-slate-400">در حال اتصال مجدد به ابر...</span>';
+  toast('در حال اتصال به سرور...', 'info');
+  const health = await probeCloud(6);
+  if (health && health.ok) {
+    enableCloudDB();
+    if (statusEl) {
+      statusEl.innerHTML = '<span class="text-brand-400">● اتصال ابری فعال — داده مشترک است</span>' +
+        ' <button type="button" class="btn-ghost text-xs" onclick="retryCloudConnect()">بررسی دوباره</button>';
+    }
+    updateConnectionStatusUI('cloud');
+    toast('اتصال ابری برقرار شد', 'success');
+    return true;
+  }
+  const why = (health && (health.error || health.code)) || 'سرور پاسخ نداد';
+  if (statusEl) {
+    statusEl.innerHTML = '<span class="text-amber-400">● ابری وصل نشد: ' + String(why).slice(0, 100) +
+      '</span><br/><button type="button" class="btn-secondary text-xs mt-2" onclick="retryCloudConnect()">تلاش مجدد اتصال ابری</button>';
+  }
+  updateConnectionStatusUI('local');
+  toast('ابری وصل نشد — ' + String(why).slice(0, 60), 'error');
+  return false;
+};
 
 async function init() {
   const statusEl = document.getElementById('cloud-status');
@@ -198,7 +233,8 @@ async function init() {
       cloud = true;
       enableCloudDB();
       if (statusEl) {
-        statusEl.innerHTML = '<span class="text-brand-400">● اتصال ابری فعال — داده بین همه دستگاه‌ها مشترک است</span>';
+        statusEl.innerHTML = '<span class="text-brand-400">● اتصال ابری فعال — داده بین همه دستگاه‌ها مشترک است</span>' +
+          ' <button type="button" class="btn-ghost text-xs" onclick="retryCloudConnect()">بررسی</button>';
       }
       updateConnectionStatusUI('cloud');
     } else if (health.code === 'NO_D1') {
@@ -210,7 +246,9 @@ async function init() {
       const why = health.error || health.code || 'پاسخ health نگرفت';
       console.warn('cloud health failed → local', health);
       if (statusEl) {
-        statusEl.innerHTML = '<span class="text-amber-400">● حالت محلی — ابری وصل نشد: ' + String(why).slice(0, 80) + '</span>';
+        statusEl.innerHTML = '<span class="text-amber-400">● حالت محلی — ابری وصل نشد: ' + String(why).slice(0, 90) +
+          '</span><br/><button type="button" class="btn-secondary text-xs mt-2" onclick="retryCloudConnect()">تلاش مجدد اتصال ابری</button>' +
+          '<p class="text-[10px] text-slate-500 mt-2">روی اینترنت مخابرات چند بار تلاش کنید. آدرس سایت باید همان آدرس Cloudflare باشد (نه فایل محلی).</p>';
       }
       updateConnectionStatusUI('local');
     }

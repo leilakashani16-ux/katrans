@@ -75,7 +75,7 @@
       background: #071a10;
       background-image:
         linear-gradient(180deg, rgba(7,26,16,0.90) 0%, rgba(10,40,24,0.92) 50%, rgba(7,26,16,0.95) 100%),
-        url('bg-ansar.jpg');
+        url('bg-ansar.jpg'); /* optional */
       background-size: cover;
       background-position: center;
       background-attachment: fixed;
@@ -350,10 +350,17 @@
     html.night-shift .data th { background: #0d4d2e !important; }
     html.night-shift .btn-primary { filter: saturate(1.1); }
 
+    @keyframes chartSlideIn {
+      from { opacity: 0; transform: translateX(18px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .chart-slide-in {
+      animation: chartSlideIn 0.45s ease-out;
+    }
   </style>
 </head>
 <body class="text-slate-100 antialiased">
-  <div id="cdn-warn">اتصال به CDN کند/قطع است — حالت پایدار بدون Tailwind فعال شد. صفحه باید کار کند.</div>
+  <div id="cdn-warn">ظاهر کامل (Tailwind) لود نشد — با CSS محلی ادامه می‌دهید. اگر صفحه سفید است یک‌بار با اینترنت موبایل باز کنید.</div>
   <!-- Login Screen -->
   <div id="login-screen" class="min-h-screen flex items-center justify-center p-4">
     <div class="glass rounded-3xl p-8 w-full max-w-md shadow-2xl fade-in">
@@ -418,6 +425,8 @@
   <div id="toast" class="toast hidden"></div>
   <div id="modal-root"></div>
 
+  <script src="js/bundle.js"></script>
+
   <!-- دکمه نصب اپ روی گوشی -->
   <div id="install-banner" class="hidden fixed bottom-0 left-0 right-0 z-[90] p-4" style="padding-bottom: max(1rem, env(safe-area-inset-bottom));">
     <div class="glass rounded-2xl p-4 flex items-center gap-3 shadow-2xl max-w-lg mx-auto border border-brand-500/30">
@@ -430,29 +439,18 @@
       <button id="install-dismiss" class="btn-ghost text-xs text-slate-400">بعداً</button>
     </div>
   </div>
-
-  <script src="js/db.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/utils.js"></script>
-  <script src="js/auth.js"></script>
-  <script src="js/pages.js"></script>
-  <script src="js/staff-meals.js"></script>
-  <script src="js/branch-stock.js"></script>
-  <script src="js/recipes-prod.js"></script>
-  <script src="js/app.js"></script>
   <script>
+    // Service Worker روی اینترنت مخابرات با ERR_CONNECTION_RESET تداخل دارد — غیرفعال
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        // نسخه جدید SW — کش‌های خراب قبلی را پاک کن
         navigator.serviceWorker.getRegistrations().then(function (regs) {
-          return Promise.all(regs.map(function (r) {
-            return r.update().catch(function () {});
-          }));
-        }).then(function () {
-          return navigator.serviceWorker.register('sw.js?v=5');
-        }).catch(function () {
-          return navigator.serviceWorker.register('sw.js');
+          regs.forEach(function (r) { r.unregister(); });
         });
+        if (window.caches) {
+          caches.keys().then(function (keys) {
+            keys.forEach(function (k) { caches.delete(k); });
+          });
+        }
         if (localStorage.getItem('kitchen_night_shift') === '1') {
           document.documentElement.classList.add('night-shift');
         }

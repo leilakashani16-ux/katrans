@@ -1013,6 +1013,37 @@ window.Auth = { isViewer, canView,
  */
 const Pages = {};
 
+Pages.startDashChartRotate = function () {
+  try {
+    if (window.__dashChartTimer) clearInterval(window.__dashChartTimer);
+  } catch (e) {}
+  window.__dashChartTimer = setInterval(function () {
+    try {
+      if (typeof currentPage !== 'undefined' && currentPage !== 'dashboard') return;
+      var modalRoot = document.getElementById('modal-root');
+      if (modalRoot && modalRoot.querySelector('.modal')) return;
+      var order = ['day', 'month', 'year'];
+      var h = location.hash || '';
+      var cur = 'day';
+      var df = '';
+      var dt = '';
+      try {
+        var q = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+        var sp = new URLSearchParams(q);
+        cur = sp.get('cperiod') || 'day';
+        df = sp.get('df') || '';
+        dt = sp.get('dt') || '';
+      } catch (e2) {}
+      var ix = order.indexOf(cur);
+      var next = order[(ix + 1) % 3];
+      var parts = ['cperiod=' + next];
+      if (df) parts.push('df=' + encodeURIComponent(df));
+      if (dt) parts.push('dt=' + encodeURIComponent(dt));
+      if (typeof navigate === 'function') navigate('dashboard?' + parts.join('&'));
+    } catch (e3) {}
+  }, 10000);
+};
+
 Pages.dashboard = async function () {
   // Parallel fetch — was serial (biggest client latency)
   const [stock, entries0, productions0, wastes0, products0, plans0, scores0] = await Promise.all([
@@ -1042,11 +1073,26 @@ Pages.dashboard = async function () {
     wastes = filterByDateAndSearch(wastes, df, dt, '', ['date']);
   }
 
+  // محدوده نمودار: روز=فقط امروز · ماه=همین ماه · سال=همین سال
+  const todayForChart = todayJalali();
+  const inChartPeriod = (dateStr) => {
+    if (!dateStr) return false;
+    const s = String(dateStr);
+    if (cperiod === 'day') return s === todayForChart;
+    if (cperiod === 'month') return s.slice(0, 7) === todayForChart.slice(0, 7);
+    if (cperiod === 'year') return s.slice(0, 4) === todayForChart.slice(0, 4);
+    return true;
+  };
+  // دادهٔ مخصوص نمودار (کارت‌های خلاصه همچنان بازه فیلتر تاریخ را دارند)
+  const chartProductions = productions.filter((p) => inChartPeriod(p.date));
+  const chartEntries = entries.filter((e) => inChartPeriod(e.date));
+  const chartWastes = wastes.filter((w) => inChartPeriod(w.date));
+
   const totalWeight = productions.reduce((s, p) => s + Number(p.material_weight || 0), 0);
   const totalQty = productions.reduce((s, p) => s + Number(p.quantity || 0), 0);
 
   const pStats = {};
-  productions.forEach(p => {
+  chartProductions.forEach(p => {
     const n = p.producer_name || 'نامشخص';
     if (!pStats[n]) pStats[n] = { count: 0, qty: 0, weight: 0, duration: 0 };
     pStats[n].count++;
@@ -1069,7 +1115,7 @@ Pages.dashboard = async function () {
   const COLORS = ['#1a9b55', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#84cc16'];
 
   const matConsume = {};
-  productions.forEach(p => {
+  chartProductions.forEach(p => {
     const n = p.material_name || 'نامشخص';
     matConsume[n] = (matConsume[n] || 0) + Number(p.material_weight || 0);
   });
@@ -1088,7 +1134,7 @@ Pages.dashboard = async function () {
   const periodSlice = { day: 14, month: 12, year: 10 };
   const trendWeight = {};
   const trendQty = {};
-  productions.forEach(p => {
+  chartProductions.forEach(p => {
     const key = periodKeyOf(p.date, cperiod);
     trendQty[key] = (trendQty[key] || 0) + Number(p.quantity || 0);
     if (unitShort(unitOf(p.material_name)) === 'عدد') return;
@@ -1115,7 +1161,7 @@ Pages.dashboard = async function () {
   const sumStockG = stockGroups.reduce((s, x) => s + x.value, 0) || 1;
 
   const byUser = {};
-  [...entries, ...productions, ...wastes].forEach(r => {
+  [...chartEntries, ...chartProductions, ...chartWastes].forEach(r => {
     const u = r.created_by || 'نامشخص';
     byUser[u] = (byUser[u] || 0) + 1;
   });
@@ -1171,7 +1217,7 @@ Pages.dashboard = async function () {
 
   // تعداد تولید هر محصول (جوجه، کوبیده، ماهی، لوبیاپلو و …)
   const prodQty = {};
-  productions.forEach(p => {
+  chartProductions.forEach(p => {
     const n = p.product_name || 'نامشخص';
     prodQty[n] = (prodQty[n] || 0) + Number(p.quantity || 0);
   });
@@ -1215,13 +1261,13 @@ Pages.dashboard = async function () {
     '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">' +
     '<div class="flex flex-wrap gap-2 items-center">' +
     '<span class="text-xs text-slate-400">نمودار روند:</span>' +
-    periodChip('day', 'روز') +
-    periodChip('month', 'ماه') +
-    periodChip('year', 'سال') +
+    periodChip('day', 'امروز') +
+    periodChip('month', 'این ماه') +
+    periodChip('year', 'امسال') +
     '</div>' +
-    '<span class="text-[10px] text-slate-500" id="chart-auto-hint">ورق خودکار هر ۱۲ ثانیه · ' + (periodLabels[cperiod] || '') + '</span>' +
+    '<span class="text-[10px] text-slate-500" id="chart-auto-hint">ورق خودکار با انیمیشن · الان: ' + (periodLabels[cperiod] || '') + '</span>' +
     '</div>' +
-    '<div class="grid lg:grid-cols-2 gap-6 mb-8" id="dash-charts">' +
+    '<div class="grid lg:grid-cols-2 gap-6 mb-8 chart-slide-in" id="dash-charts">' +
     barCard('🍢 تعداد تولید محصولات', 'در بازه فیلتر · تجمیع ' + (periodLabels[cperiod] || ''), productItems, maxProdQty) +
     (trendQtyItems.length ? barCard('📈 تعداد تولید — ' + (periodLabels[cperiod] || ''), 'جمع تعداد در هر ' + (cperiod === 'day' ? 'روز' : cperiod === 'month' ? 'ماه' : 'سال'), trendQtyItems, maxTrendQty) : '') +
     donutCard('📊 سهم تعداد محصولات', 'درصد از کل تعداد تولید', productItems, sumProdQty, (it) => fmtNum(it.value) + ' عدد') +
@@ -1229,8 +1275,12 @@ Pages.dashboard = async function () {
     donutCard('👨‍🍳 سهم پرسنل', 'بر اساس وزن مصرف', staffItems, sumStaff, (it) => fmtNum(it.value) + ' · ' + (it.count || 0) + ' رکورد') +
     donutCard('✍️ ثبت‌کننده‌ها', 'ورود + تولید + ضایعات', userItems, sumUser, (it) => it.value + ' رکورد') +
     (dayItems.length ? donutCard('📅 مصرف کیلویی — ' + (periodLabels[cperiod] || ''), 'مواد کیلویی تجمیع‌شده', dayItems, sumDay, (it) => fmtNum(it.value) + ' کیلو') : '') +
-    '</div>' +
-    '<script>(function(){ try { if (window.__dashChartTimer) clearInterval(window.__dashChartTimer); window.__dashChartTimer = setInterval(function(){ if (typeof currentPage !== "undefined" && currentPage !== "dashboard") return; if (document.querySelector(".modal") && !document.getElementById("modal-root").classList.contains("hidden")) return; var order=["day","month","year"]; var h=(location.hash||""); var cur="day"; try { var q=h.indexOf("?")>=0?h.slice(h.indexOf("?")+1):""; cur=new URLSearchParams(q).get("cperiod")||"day"; } catch(e){} var ix=order.indexOf(cur); var next=order[(ix+1)%3]; var df="",dt=""; try { var q2=h.indexOf("?")>=0?h.slice(h.indexOf("?")+1):""; var sp=new URLSearchParams(q2); df=sp.get("df")||""; dt=sp.get("dt")||""; } catch(e){} var parts=["cperiod="+next]; if(df)parts.push("df="+encodeURIComponent(df)); if(dt)parts.push("dt="+encodeURIComponent(dt)); if (typeof navigate==="function") navigate("dashboard?"+parts.join("&")); }, 12000); } catch(e){} })();</script>';
+    (chartProductions.length === 0
+      ? '<div class="glass-card rounded-2xl p-6 lg:col-span-2 text-center text-slate-400 text-sm">در این بازه (' +
+        (periodLabels[cperiod] || '') +
+        ') تولیدی ثبت نشده — نمودار خالی است</div>'
+      : '') +
+    '</div>';
 
 
   // —— ویژگی‌های هوشمند ——
@@ -6570,6 +6620,12 @@ async function navigate(page) {
       content.classList.remove('fade-in');
       void content.offsetWidth;
       content.classList.add('fade-in');
+      if (pure === 'dashboard' && typeof Pages.startDashChartRotate === 'function') {
+        Pages.startDashChartRotate();
+      } else if (window.__dashChartTimer) {
+        try { clearInterval(window.__dashChartTimer); } catch (e) {}
+        window.__dashChartTimer = null;
+      }
     } else {
       content.innerHTML = '<p class="text-red-400">صفحه یافت نشد</p>';
     }
