@@ -2,11 +2,11 @@
  * IndexedDB wrapper + seed data for Kitchen Inventory System
  */
 const DB_NAME = 'kitchen_inventory_v1';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let db = null;
 
-const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions'];
+const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions', 'chat_messages'];
 
 function openDB() {
   return new Promise((resolve, reject) => {

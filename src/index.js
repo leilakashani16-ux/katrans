@@ -7,7 +7,7 @@
  * Requires D1 binding named "DB"
  */
 
-const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions']);
+const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions', 'chat_messages']);
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -603,12 +603,24 @@ async function handleApi(request, env) {
   if (path.startsWith('api/')) path = path.slice(4);
 
   try {
-    await ensureSchema(env.DB);
-
+    // health باید سریع باشد (اینترنت کند / مخابرات) — اسکیما کامل اینجا اجرا نشود
     if (path === 'health' || path === '') {
-      const c = await env.DB.prepare('SELECT COUNT(*) as c FROM users').first();
-      return json({ ok: true, mode: 'cloud', users: c?.c ?? 0, ts: new Date().toISOString() });
+      try {
+        const c = await env.DB.prepare('SELECT COUNT(*) as c FROM users').first();
+        return json({ ok: true, mode: 'cloud', users: c?.c ?? 0, ts: new Date().toISOString(), light: true });
+      } catch (e1) {
+        // جدول هنوز نیست — یک‌بار اسکیما
+        try {
+          await ensureSchema(env.DB);
+          const c = await env.DB.prepare('SELECT COUNT(*) as c FROM users').first();
+          return json({ ok: true, mode: 'cloud', users: c?.c ?? 0, ts: new Date().toISOString(), migrated: true });
+        } catch (e2) {
+          return json({ ok: false, error: String(e2.message || e2), code: 'HEALTH_FAIL' }, 500);
+        }
+      }
     }
+
+    await ensureSchema(env.DB);
 
     // بازیابی رمز ادمین — یک‌بار بعد از deploy استفاده شود
     // POST /api/reset-admin  body: {"secret":"ansar-reset-1405","password":"admin123"}
@@ -910,6 +922,15 @@ async function handleApi(request, env) {
         body.created_by = who;
         body.updated_by = who;
         if (!body.created_at) body.created_at = new Date().toISOString();
+      }
+      if (store === 'chat_messages') {
+        body.username = user.username || '';
+        body.full_name = user.full_name || user.username || '';
+        body.role = user.role || '';
+        body.created_at = new Date().toISOString();
+        body.body = String(body.body || body.text || '').trim().slice(0, 2000);
+        if (!body.body) return json({ error: 'پیام خالی است' }, 400);
+        delete body.text;
       }
 
       

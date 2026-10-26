@@ -13,6 +13,7 @@ const NAV = {
     { id: 'transfers', label: 'ارسال شعبه', icon: '🚚' },
     { id: 'stocktake', label: 'انبارگردانی', icon: '📋' },
     { id: 'personnel', label: 'پرسنل', icon: '👥' },
+    { id: 'chat', label: 'گفتگو', icon: '💬' },
     { id: 'reports', label: 'گزارش و پشتیبان', icon: '📑' },
     { id: 'audit', label: 'لاگ فعالیت', icon: '📜' },
     { id: 'settings', label: 'تنظیمات', icon: '⚙️' },
@@ -24,6 +25,7 @@ const NAV = {
     { id: 'wastes', label: 'ضایعات', icon: '🗑️' },
     { id: 'materials', label: 'موجودی مواد', icon: '📦' },
     { id: 'transfers', label: 'ارسال شعبه', icon: '🚚' },
+    { id: 'chat', label: 'گفتگو', icon: '💬' },
     { id: 'reports', label: 'گزارش‌ها', icon: '📑' }
   ],
   production: [
@@ -32,6 +34,7 @@ const NAV = {
     { id: 'products', label: 'محصولات', icon: '🍢' },
     { id: 'personnel', label: 'پرسنل', icon: '👥' },
     { id: 'materials', label: 'موجودی مواد', icon: '📦' },
+    { id: 'chat', label: 'گفتگو', icon: '💬' },
     { id: 'reports', label: 'گزارش‌ها', icon: '📑' }
   ]
 };
@@ -43,12 +46,17 @@ function buildNav() {
   const links = NAV[role] || NAV.entry;
   const el = document.getElementById('nav-links');
   const activeId = (currentPage === 'attendance' || currentPage === 'league') ? 'personnel' : currentPage;
-  el.innerHTML = links.map(l => `
+  el.innerHTML = links.map(l => {
+    const badge = l.id === 'chat'
+      ? '<span id="chat-nav-badge" class="hidden chat-badge"></span>'
+      : '';
+    return `
     <div class="sidebar-link ${activeId === l.id ? 'active' : ''}" data-page="${l.id}" onclick="navigate('${l.id}')">
       <span>${l.icon}</span>
-      <span>${l.label}</span>
-    </div>
-  `).join('');
+      <span>${l.label}</span>${badge}
+    </div>`;
+  }).join('');
+  try { if (typeof Pages.pollChat === 'function') Pages.pollChat(); } catch (e) {}
 }
 
 async function navigate(page) {
