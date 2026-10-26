@@ -1034,6 +1034,8 @@ Pages.dashboard = async function () {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const df = params.get('df') || '';
   const dt = params.get('dt') || '';
+  let cperiod = params.get('cperiod') || 'day';
+  if (cperiod !== 'day' && cperiod !== 'month' && cperiod !== 'year') cperiod = 'day';
   if (df || dt) {
     entries = filterByDateAndSearch(entries, df, dt, '', ['date']);
     productions = filterByDateAndSearch(productions, df, dt, '', ['date']);
@@ -1074,14 +1076,33 @@ Pages.dashboard = async function () {
   const topMats = Object.entries(matConsume).sort((a, b) => b[1] - a[1]).slice(0, 7);
   const sumMat = topMats.reduce((s, [, v]) => s + v, 0) || 1;
 
-  const dayWeight = {};
+  // روند تولید بر اساس دوره: روز / ماه / سال
+  const periodKeyOf = (dateStr, mode) => {
+    if (!dateStr || dateStr === '—') return '—';
+    const s = String(dateStr);
+    if (mode === 'year') return s.slice(0, 4) || s;
+    if (mode === 'month') return s.length >= 7 ? s.slice(0, 7) : s;
+    return s;
+  };
+  const periodLabels = { day: 'روزانه', month: 'ماهانه', year: 'سالانه' };
+  const periodSlice = { day: 14, month: 12, year: 10 };
+  const trendWeight = {};
+  const trendQty = {};
   productions.forEach(p => {
+    const key = periodKeyOf(p.date, cperiod);
+    trendQty[key] = (trendQty[key] || 0) + Number(p.quantity || 0);
     if (unitShort(unitOf(p.material_name)) === 'عدد') return;
-    const d = p.date || '—';
-    dayWeight[d] = (dayWeight[d] || 0) + Number(p.material_weight || 0);
+    trendWeight[key] = (trendWeight[key] || 0) + Number(p.material_weight || 0);
   });
-  const dayKeys = Object.keys(dayWeight).sort().slice(-8);
+  const dayWeight = trendWeight;
+  const dayKeys = Object.keys(trendWeight).sort().slice(-(periodSlice[cperiod] || 14));
   const sumDay = dayKeys.reduce((s, d) => s + dayWeight[d], 0) || 1;
+  const trendQtyKeys = Object.keys(trendQty).sort().slice(-(periodSlice[cperiod] || 14));
+  const trendQtyItems = trendQtyKeys.map((k, i) => ({
+    label: k, value: trendQty[k], color: COLORS[i % COLORS.length],
+  }));
+  const sumTrendQty = trendQtyItems.reduce((s, it) => s + it.value, 0) || 1;
+  const maxTrendQty = trendQtyItems.length ? Math.max(...trendQtyItems.map(it => it.value)) : 1;
 
   const staffList = Object.entries(pStats).sort((a, b) => b[1].weight - a[1].weight).slice(0, 7);
   const sumStaff = staffList.reduce((s, [, v]) => s + v.weight, 0) || 1;
@@ -1181,15 +1202,35 @@ Pages.dashboard = async function () {
   };
   const maxProdQty = topProducts.length ? topProducts[0][1] : 1;
 
+  const periodChip = (id, label) => {
+    const on = cperiod === id;
+    const q = [];
+    if (df) q.push('df=' + encodeURIComponent(df));
+    if (dt) q.push('dt=' + encodeURIComponent(dt));
+    q.push('cperiod=' + id);
+    return '<button type="button" class="' + (on ? 'btn-primary' : 'btn-ghost') + ' text-xs" onclick="navigate(\'dashboard?' + q.join('&') + '\')">' + label + '</button>';
+  };
+
   const chartsHtml =
-    '<div class="grid lg:grid-cols-2 gap-6 mb-8">' +
-    barCard('🍢 تعداد تولید محصولات', 'جوجه، کوبیده، ماهی، لوبیاپلو و … (بر اساس فیلتر تاریخ)', productItems, maxProdQty) +
+    '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">' +
+    '<div class="flex flex-wrap gap-2 items-center">' +
+    '<span class="text-xs text-slate-400">نمودار روند:</span>' +
+    periodChip('day', 'روز') +
+    periodChip('month', 'ماه') +
+    periodChip('year', 'سال') +
+    '</div>' +
+    '<span class="text-[10px] text-slate-500" id="chart-auto-hint">ورق خودکار هر ۱۲ ثانیه · ' + (periodLabels[cperiod] || '') + '</span>' +
+    '</div>' +
+    '<div class="grid lg:grid-cols-2 gap-6 mb-8" id="dash-charts">' +
+    barCard('🍢 تعداد تولید محصولات', 'در بازه فیلتر · تجمیع ' + (periodLabels[cperiod] || ''), productItems, maxProdQty) +
+    (trendQtyItems.length ? barCard('📈 تعداد تولید — ' + (periodLabels[cperiod] || ''), 'جمع تعداد در هر ' + (cperiod === 'day' ? 'روز' : cperiod === 'month' ? 'ماه' : 'سال'), trendQtyItems, maxTrendQty) : '') +
     donutCard('📊 سهم تعداد محصولات', 'درصد از کل تعداد تولید', productItems, sumProdQty, (it) => fmtNum(it.value) + ' عدد') +
     donutCard('📦 وضعیت موجودی', 'تعداد اقلام در هر وضعیت', stockGroups, sumStockG, (it) => it.value + ' قلم') +
-    donutCard('👨‍🍳 سهم پرسنل', 'بر اساس فیلد مصرف', staffItems, sumStaff, (it) => fmtNum(it.value) + ' · ' + (it.count || 0) + ' رکورد') +
+    donutCard('👨‍🍳 سهم پرسنل', 'بر اساس وزن مصرف', staffItems, sumStaff, (it) => fmtNum(it.value) + ' · ' + (it.count || 0) + ' رکورد') +
     donutCard('✍️ ثبت‌کننده‌ها', 'ورود + تولید + ضایعات', userItems, sumUser, (it) => it.value + ' رکورد') +
-    (dayItems.length ? donutCard('📅 تولید روزهای اخیر', 'فقط مواد کیلویی', dayItems, sumDay, (it) => fmtNum(it.value) + ' کیلو') : '') +
-    '</div>';
+    (dayItems.length ? donutCard('📅 مصرف کیلویی — ' + (periodLabels[cperiod] || ''), 'مواد کیلویی تجمیع‌شده', dayItems, sumDay, (it) => fmtNum(it.value) + ' کیلو') : '') +
+    '</div>' +
+    '<script>(function(){ try { if (window.__dashChartTimer) clearInterval(window.__dashChartTimer); window.__dashChartTimer = setInterval(function(){ if (typeof currentPage !== "undefined" && currentPage !== "dashboard") return; if (document.querySelector(".modal") && !document.getElementById("modal-root").classList.contains("hidden")) return; var order=["day","month","year"]; var h=(location.hash||""); var cur="day"; try { var q=h.indexOf("?")>=0?h.slice(h.indexOf("?")+1):""; cur=new URLSearchParams(q).get("cperiod")||"day"; } catch(e){} var ix=order.indexOf(cur); var next=order[(ix+1)%3]; var df="",dt=""; try { var q2=h.indexOf("?")>=0?h.slice(h.indexOf("?")+1):""; var sp=new URLSearchParams(q2); df=sp.get("df")||""; dt=sp.get("dt")||""; } catch(e){} var parts=["cperiod="+next]; if(df)parts.push("df="+encodeURIComponent(df)); if(dt)parts.push("dt="+encodeURIComponent(dt)); if (typeof navigate==="function") navigate("dashboard?"+parts.join("&")); }, 12000); } catch(e){} })();</script>';
 
 
   // —— ویژگی‌های هوشمند ——
