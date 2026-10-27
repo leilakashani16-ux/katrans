@@ -734,6 +734,16 @@ async function handleApi(request, env) {
       try {
         consumptions = (await env.DB.prepare('SELECT * FROM production_consumptions').all()).results || [];
       } catch (e) { consumptions = []; }
+      let processings = [];
+      try {
+        processings = (await soft('processings')).results || [];
+      } catch (e) {
+        try {
+          processings = (await env.DB.prepare('SELECT * FROM processings').all()).results || [];
+        } catch (e2) {
+          processings = [];
+        }
+      }
       const multiProdIds = new Set(consumptions.map((c) => Number(c.production_id)));
       const activeProdIds = new Set(productions.map((p) => Number(p.id)));
       const stock = materials.map((m) => {
