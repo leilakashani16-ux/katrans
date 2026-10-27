@@ -1089,12 +1089,30 @@ const keys = Object.keys(body).filter((k) => body[k] !== undefined);
         await bumpDataVersion(env.DB);
         return json({ ok: true, id });
       }
-      if (user.role !== 'admin') return json({ error: 'admin only' }, 403);
+      // ادمین همه چیز؛ انباردار فقط ویرایش ورود و ضایعات
+      if (user.role !== 'admin') {
+        if (user.role !== 'entry' || !['entries', 'wastes'].includes(store)) {
+          return json({ error: 'admin only' }, 403);
+        }
+      }
       const body = await request.json();
       delete body.id;
       if (body.password) {
         body.password_hash = await hashPassword(body.password);
         delete body.password;
+
+      // آپدیت آخرین قیمت خرید هنگام ویرایش ورود
+      if (store === 'entries' && body.material_name && body.unit_price != null && body.unit_price !== '') {
+        const price = Number(body.unit_price);
+        if (price > 0) {
+          try {
+            await env.DB.prepare(
+              'UPDATE materials SET last_buy_price = ?, last_buy_date = ? WHERE name = ?'
+            ).bind(price, body.date || null, body.material_name).run();
+            if (body.quantity != null) body.total_price = price * Number(body.quantity);
+          } catch (e) { console.warn('last_buy_price put', e); }
+        }
+      }
       } else {
         delete body.password;
         delete body.password_hash;
