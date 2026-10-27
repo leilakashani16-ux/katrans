@@ -6,7 +6,7 @@ const DB_VERSION = 5;
 
 let db = null;
 
-const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions', 'chat_messages'];
+const STORES = ['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'settings', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions', 'chat_messages', 'processings'];
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -222,18 +222,22 @@ async function calcStock() {
 
   let consumptions = [];
   try { consumptions = (await getAll('production_consumptions')) || []; } catch (e) { consumptions = []; }
+  let processings = [];
+  try { processings = ((await getAll('processings')) || []).filter(pr => !pr.deleted_at); } catch (e) { processings = []; }
   const multiProdIds = new Set(consumptions.map(c => Number(c.production_id)));
   const activeProdIds = new Set(productions.map(p => Number(p.id)));
 
   return materials.map(m => {
-    const totalIn = entries.filter(e => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0);
+    const totalIn = entries.filter(e => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0)
+      + processings.filter(pr => pr.target_material === m.name).reduce((s, pr) => s + Number(pr.target_qty || 0), 0);
     const singleOut = productions
       .filter(p => !multiProdIds.has(Number(p.id)) && p.material_name === m.name)
       .reduce((s, p) => s + Number(p.material_weight || 0), 0);
     const multiOut = consumptions
       .filter(c => c.material_name === m.name && activeProdIds.has(Number(c.production_id)))
       .reduce((s, c) => s + Number(c.quantity || 0), 0);
-    const totalOut = singleOut + multiOut;
+    const processOut = processings.filter(pr => pr.source_material === m.name).reduce((s, pr) => s + Number(pr.source_qty || 0), 0);
+    const totalOut = singleOut + multiOut + processOut;
     const totalWaste = wastes.filter(w => w.material_name === m.name).reduce((s, w) => s + Number(w.quantity || 0), 0);
     const totalReturn = returns.filter(r => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
     const totalTransfer = transferItems.filter(i => i.item_name === m.name).reduce((s, i) => s + Number(i.quantity || 0), 0);

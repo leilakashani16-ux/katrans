@@ -7,7 +7,7 @@
  * Requires D1 binding named "DB"
  */
 
-const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions', 'chat_messages']);
+const STORES = new Set(['users', 'personnel', 'materials', 'products', 'entries', 'wastes', 'productions', 'returns', 'daily_plans', 'staff_scores', 'suppliers', 'daily_staff_menu', 'attendance_meals', 'general_items', 'branch_transfers', 'branch_transfer_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items', 'production_consumptions', 'chat_messages', 'processings']);
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -400,6 +400,27 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
   // optional secondary unit for materials (display only, does not affect stock calc)
   await ensureColumn(db, 'materials', 'secondary_unit', 'TEXT');
   await ensureColumn(db, 'materials', 'unit_factor', 'REAL');
+  await ensureColumn(db, 'materials', 'material_type', "TEXT DEFAULT 'raw'");
+  await ensureColumn(db, 'materials', 'parent_material', 'TEXT');
+  await ensureColumn(db, 'materials', 'last_buy_price', 'REAL');
+  await ensureColumn(db, 'materials', 'last_buy_date', 'TEXT');
+  await ensureColumn(db, 'entries', 'unit_price', 'REAL');
+  await ensureColumn(db, 'entries', 'total_price', 'REAL');
+  await db.prepare(`CREATE TABLE IF NOT EXISTS processings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    source_material TEXT NOT NULL,
+    source_qty REAL NOT NULL,
+    target_material TEXT NOT NULL,
+    target_qty REAL NOT NULL,
+    waste_qty REAL DEFAULT 0,
+    waste_note TEXT,
+    producer_name TEXT,
+    notes TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    deleted_at TEXT
+  )`).run();
 
   // پرسنل: تیم + نوع شیفت (برای غذای پرسنلی و تقویم آینده)
   await ensureColumn(db, 'personnel', 'team', "TEXT DEFAULT 'executive'");
@@ -716,14 +737,16 @@ async function handleApi(request, env) {
       const multiProdIds = new Set(consumptions.map((c) => Number(c.production_id)));
       const activeProdIds = new Set(productions.map((p) => Number(p.id)));
       const stock = materials.map((m) => {
-        const totalIn = entries.filter((e) => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0);
+        const totalIn = entries.filter((e) => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0)
+          + processings.filter((pr) => pr.target_material === m.name).reduce((s, pr) => s + Number(pr.target_qty || 0), 0);
         const singleOut = productions
           .filter((p) => !multiProdIds.has(Number(p.id)) && p.material_name === m.name)
           .reduce((s, p) => s + Number(p.material_weight || 0), 0);
         const multiOut = consumptions
           .filter((c) => c.material_name === m.name && activeProdIds.has(Number(c.production_id)))
           .reduce((s, c) => s + Number(c.quantity || 0), 0);
-        const totalOut = singleOut + multiOut;
+        const processOut = processings.filter((pr) => pr.source_material === m.name).reduce((s, pr) => s + Number(pr.source_qty || 0), 0);
+        const totalOut = singleOut + multiOut + processOut;
         const totalWaste = wastes.filter((w) => w.material_name === m.name).reduce((s, w) => s + Number(w.quantity || 0), 0);
         const totalReturn = returns.filter((r) => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
         const totalTransfer = transferItems.filter((i) => i.item_name === m.name).reduce((s, i) => s + Number(i.quantity || 0), 0);
@@ -903,6 +926,9 @@ async function handleApi(request, env) {
       if (store === 'productions' && !['admin', 'production'].includes(user.role)) {
         return json({ error: 'forbidden' }, 403);
       }
+      if (store === 'processings' && !['admin', 'production'].includes(user.role)) {
+        return json({ error: 'forbidden' }, 403);
+      }
       if (['materials', 'products', 'personnel', 'daily_plans', 'staff_scores', 'daily_staff_menu', 'attendance_meals', 'general_items', 'stocktakes', 'stocktake_lines', 'recipes', 'recipe_items'].includes(store) && user.role !== 'admin') {
         return json({ error: 'admin only' }, 403);
       }
@@ -930,6 +956,25 @@ async function handleApi(request, env) {
         const who = actorLabel(user);
         body.created_by = who;
         body.updated_by = who;
+        if (!body.created_at) body.created_at = new Date().toISOString();
+      }
+
+      // آپدیت آخرین قیمت خرید ماده
+      if (store === 'entries' && body.material_name && body.unit_price != null && body.unit_price !== '') {
+        const price = Number(body.unit_price);
+        if (price > 0) {
+          try {
+            await env.DB.prepare(
+              'UPDATE materials SET last_buy_price = ?, last_buy_date = ? WHERE name = ?'
+            ).bind(price, body.date || null, body.material_name).run();
+            if (body.quantity != null) body.total_price = price * Number(body.quantity);
+          } catch (e) { console.warn('last_buy_price update', e); }
+        }
+      }
+
+      if (store === 'processings') {
+        const who = actorLabel(user);
+        body.created_by = who;
         if (!body.created_at) body.created_at = new Date().toISOString();
       }
       if (store === 'chat_messages') {
