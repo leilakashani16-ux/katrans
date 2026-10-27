@@ -36,11 +36,11 @@
   ];
 
   var RAJA_PRODUCTS = [
-    { code: "P001", name: "\u062d\u0645\u0635", weight_per_unit: 250, material_name: "" },
-    { code: "P002", name: "\u0645\u0627\u0633\u062a \u0648\u062e\u06cc\u0627\u0631", weight_per_unit: 250, material_name: "" },
-    { code: "P003", name: "\u062a\u0647 \u0686\u06cc\u0646 \u0633\u0627\u062f\u0647", weight_per_unit: 1125, material_name: "" },
-    { code: "P004", name: "\u0644\u0648\u0628\u06cc\u0627\u067e\u0644\u0648 \u0628\u0627 \u0628\u0631\u0646\u062c", weight_per_unit: 1125, material_name: "" },
-    { code: "P005", name: "\u0628\u0648\u0631\u0627\u0646\u06cc \u0627\u0633\u0641\u0646\u0627\u062c", weight_per_unit: 250, material_name: "" }
+    { code: "P016", name: "\u062d\u0645\u0635", weight_per_unit: 250, material_name: "" },
+    { code: "P017", name: "\u0645\u0627\u0633\u062a \u0648\u062e\u06cc\u0627\u0631", weight_per_unit: 250, material_name: "" },
+    { code: "P018", name: "\u062a\u0647 \u0686\u06cc\u0646 \u0633\u0627\u062f\u0647", weight_per_unit: 1125, material_name: "" },
+    { code: "P019", name: "\u0644\u0648\u0628\u06cc\u0627\u067e\u0644\u0648 \u0628\u0627 \u0628\u0631\u0646\u062c", weight_per_unit: 1125, material_name: "" },
+    { code: "P020", name: "\u0628\u0648\u0631\u0627\u0646\u06cc \u0627\u0633\u0641\u0646\u0627\u062c", weight_per_unit: 250, material_name: "" }
   ];
 
   var RAJA_RECIPES = {
@@ -95,16 +95,44 @@
       var addedP = 0;
       for (var j = 0; j < RAJA_PRODUCTS.length; j++) {
         var pr = RAJA_PRODUCTS[j];
-        if (pByName[pr.name]) continue;
-        await DB.add('products', {
-          code: pr.code,
-          name: pr.name,
-          weight_per_unit: pr.weight_per_unit,
-          material_name: pr.material_name || '',
-          remainder_type: 'حمل به روز بعد',
-          active: 1
-        });
-        addedP++;
+        if (pByName[pr.name]) {
+          // محصول هست؛ فقط مطمئن شو فعال است
+          try {
+            var pe = pByName[pr.name];
+            await DB.put('products', Object.assign({}, pe, {
+              active: 1,
+              weight_per_unit: pe.weight_per_unit || pr.weight_per_unit
+            }));
+          } catch (e0) {}
+          continue;
+        }
+        try {
+          await DB.add('products', {
+            code: pr.code,
+            name: pr.name,
+            weight_per_unit: pr.weight_per_unit,
+            material_name: pr.material_name || '',
+            remainder_type: 'حمل به روز بعد',
+            active: 1
+          });
+          addedP++;
+        } catch (eAdd) {
+          console.warn('product add', pr.name, eAdd);
+          // fallback: code تصادفی
+          try {
+            await DB.add('products', {
+              code: 'P' + String(100 + j),
+              name: pr.name,
+              weight_per_unit: pr.weight_per_unit,
+              material_name: '',
+              remainder_type: 'حمل به روز بعد',
+              active: 1
+            });
+            addedP++;
+          } catch (e2) {
+            console.error('product fail', pr.name, e2);
+          }
+        }
       }
 
       var allR = (await DB.getAll('recipes').catch(function () { return []; })) || [];
