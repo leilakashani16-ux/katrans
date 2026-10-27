@@ -421,6 +421,8 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     created_at TEXT DEFAULT (datetime('now')),
     deleted_at TEXT
   )`).run();
+  await ensureColumn(db, 'processings', 'sources_json', 'TEXT');
+
 
   // پرسنل: تیم + نوع شیفت (برای غذای پرسنلی و تقویم آینده)
   await ensureColumn(db, 'personnel', 'team', "TEXT DEFAULT 'executive'");
@@ -755,7 +757,21 @@ async function handleApi(request, env) {
         const multiOut = consumptions
           .filter((c) => c.material_name === m.name && activeProdIds.has(Number(c.production_id)))
           .reduce((s, c) => s + Number(c.quantity || 0), 0);
-        const processOut = processings.filter((pr) => pr.source_material === m.name).reduce((s, pr) => s + Number(pr.source_qty || 0), 0);
+        const processOut = processings.reduce((s, pr) => {
+          let q = 0;
+          if (pr.sources_json) {
+            try {
+              const lines = JSON.parse(pr.sources_json);
+              if (Array.isArray(lines)) {
+                q = lines
+                  .filter((l) => (l.material || l.material_name) === m.name)
+                  .reduce((a, l) => a + Number(l.qty || l.quantity || 0), 0);
+              }
+            } catch (e) { q = 0; }
+          }
+          if (!q && pr.source_material === m.name) q = Number(pr.source_qty || 0);
+          return s + q;
+        }, 0);
         const totalOut = singleOut + multiOut + processOut;
         const totalWaste = wastes.filter((w) => w.material_name === m.name).reduce((s, w) => s + Number(w.quantity || 0), 0);
         const totalReturn = returns.filter((r) => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
