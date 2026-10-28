@@ -152,47 +152,78 @@
   }
 
   function openPrint(htmlBody, title) {
-    var w = window.open('', '_blank', 'noopener,noreferrer');
-    if (!w) {
-      toast('پنجره چاپ مسدود شد — اجازه پاپ‌آپ بدهید', 'error');
-      return;
-    }
-    w.document.write(
+    var full =
       '<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8" />' +
-        '<title>' +
-        (title || 'رسپی') +
-        '</title>' +
-        '<style>' +
-        'body{font-family:Tahoma,Vazirmatn,sans-serif;margin:0;padding:16px;color:#111;background:#fff}' +
-        '.sheet{max-width:800px;margin:0 auto 24px;page-break-after:always;border:1px solid #ddd;padding:20px;border-radius:8px}' +
-        '.sheet:last-child{page-break-after:auto}' +
-        'header{text-align:center;margin-bottom:12px}' +
-        '.brand{font-size:13px;color:#555}' +
-        'h1{font-size:16px;margin:4px 0;font-weight:700}' +
-        'h2{font-size:22px;margin:6px 0 4px;color:#0d4d2e}' +
-        '.meta{font-size:12px;color:#666}' +
-        '.note{font-size:13px;background:#f4f7f5;padding:8px 12px;border-radius:6px;border-right:3px solid #0d4d2e}' +
-        'table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}' +
-        'th,td{border:1px solid #ccc;padding:8px 10px}' +
-        'th{background:#0d4d2e;color:#fff}' +
-        'tbody tr:nth-child(even){background:#f8faf9}' +
-        '.sum{margin-top:12px;font-size:13px;line-height:1.8}' +
-        '.notes{margin-top:10px;font-size:12px;color:#333}' +
-        'footer{display:flex;justify-content:space-between;margin-top:28px;font-size:12px;color:#444}' +
-        '.sign{min-width:40%}' +
-        '.toolbar{position:sticky;top:0;background:#fff;padding:10px;border-bottom:1px solid #eee;display:flex;gap:8px;justify-content:center;z-index:5}' +
-        '.toolbar button{padding:8px 16px;border-radius:8px;border:1px solid #0d4d2e;background:#0d4d2e;color:#fff;cursor:pointer;font-family:inherit}' +
-        '.toolbar button.sec{background:#fff;color:#0d4d2e}' +
-        '@media print{.toolbar{display:none}body{padding:0}.sheet{border:none;padding:0}}' +
-        '</style></head><body>' +
-        '<div class="toolbar">' +
-        '<button onclick="window.print()">🖨 چاپ</button>' +
-        '<button class="sec" onclick="window.close()">بستن</button>' +
-        '</div>' +
-        htmlBody +
-        '</body></html>'
-    );
-    w.document.close();
+      '<title>' +
+      (title || 'رسپی') +
+      '</title>' +
+      '<style>' +
+      'body{font-family:Tahoma,Vazirmatn,sans-serif;margin:0;padding:16px;color:#111;background:#fff}' +
+      '.sheet{max-width:800px;margin:0 auto 24px;page-break-after:always;border:1px solid #ddd;padding:20px;border-radius:8px}' +
+      '.sheet:last-child{page-break-after:auto}' +
+      'header{text-align:center;margin-bottom:12px}' +
+      '.brand{font-size:13px;color:#555}' +
+      'h1{font-size:16px;margin:4px 0;font-weight:700}' +
+      'h2{font-size:22px;margin:6px 0 4px;color:#0d4d2e}' +
+      '.meta{font-size:12px;color:#666}' +
+      '.note{font-size:13px;background:#f4f7f5;padding:8px 12px;border-radius:6px;border-right:3px solid #0d4d2e}' +
+      'table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}' +
+      'th,td{border:1px solid #ccc;padding:8px 10px}' +
+      'th{background:#0d4d2e;color:#fff}' +
+      'tbody tr:nth-child(even){background:#f8faf9}' +
+      '.sum{margin-top:12px;font-size:13px;line-height:1.8}' +
+      '.notes{margin-top:10px;font-size:12px;color:#333}' +
+      'footer{display:flex;justify-content:space-between;margin-top:28px;font-size:12px;color:#444}' +
+      '.sign{min-width:40%}' +
+      '.toolbar{position:sticky;top:0;background:#fff;padding:10px;border-bottom:1px solid #eee;display:flex;gap:8px;justify-content:center;z-index:5}' +
+      '.toolbar button{padding:8px 16px;border-radius:8px;border:1px solid #0d4d2e;background:#0d4d2e;color:#fff;cursor:pointer;font-family:inherit}' +
+      '.toolbar button.sec{background:#fff;color:#0d4d2e}' +
+      '@media print{.toolbar{display:none!important}body{padding:0}.sheet{border:none;padding:0}}' +
+      '</style></head><body>' +
+      '<div class="toolbar">' +
+      '<button type="button" onclick="window.print()">چاپ</button>' +
+      '<button type="button" class="sec" onclick="window.close()">بستن</button>' +
+      '</div>' +
+      htmlBody +
+      '</body></html>';
+
+    try {
+      var blob = new Blob([full], { type: 'text/html;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var w = window.open(url, '_blank');
+      if (!w) {
+        // fallback: iframe چاپ در همان صفحه
+        printViaIframe(full);
+        return;
+      }
+      setTimeout(function () {
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      }, 60000);
+    } catch (e) {
+      console.error(e);
+      printViaIframe(full);
+    }
+  }
+
+  function printViaIframe(fullHtml) {
+    var old = document.getElementById('recipe-print-frame');
+    if (old) old.remove();
+    var iframe = document.createElement('iframe');
+    iframe.id = 'recipe-print-frame';
+    iframe.style.cssText = 'position:fixed;right:0;top:0;width:0;height:0;border:0;opacity:0';
+    document.body.appendChild(iframe);
+    var doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(fullHtml);
+    doc.close();
+    setTimeout(function () {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (e2) {
+        toast('چاپ ناموفق — پاپ‌آپ را مجاز کنید', 'error');
+      }
+    }, 400);
   }
 
   /** چاپ یک رسپی */
