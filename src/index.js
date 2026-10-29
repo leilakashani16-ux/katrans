@@ -875,7 +875,7 @@ async function handleApi(request, env) {
       const body = await request.json().catch(() => ({}));
       const safe = {
         company_name: String(body.company_name || 'غذای انصار').slice(0, 80),
-        default_min_alert: Number(body.default_min_alert) || 5,
+        default_min_alert: body.default_min_alert === 0 || body.default_min_alert === '0' ? 0 : (Number(body.default_min_alert) || 5),
         alert_enabled: body.alert_enabled === true || body.alert_enabled === 'true' || body.alert_enabled === 1,
         backup_hint: body.backup_hint === true || body.backup_hint === 'true' || body.backup_hint === 1,
       };
