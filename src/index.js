@@ -404,6 +404,7 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
   await ensureColumn(db, 'materials', 'parent_material', 'TEXT');
   await ensureColumn(db, 'materials', 'last_buy_price', 'REAL');
   await ensureColumn(db, 'materials', 'last_buy_date', 'TEXT');
+  await ensureColumn(db, 'materials', 'category', "TEXT DEFAULT 'food'");
   await ensureColumn(db, 'entries', 'unit_price', 'REAL');
   await ensureColumn(db, 'entries', 'total_price', 'REAL');
   await db.prepare(`CREATE TABLE IF NOT EXISTS processings (
@@ -748,6 +749,15 @@ async function handleApi(request, env) {
       }
       const multiProdIds = new Set(consumptions.map((c) => Number(c.production_id)));
       const activeProdIds = new Set(productions.map((p) => Number(p.id)));
+
+        let alertEnabled = true;
+        try {
+          const _srow = await env.DB.prepare("SELECT value FROM app_meta WHERE key = 'settings'").first();
+          if (_srow && _srow.value) {
+            const _s = JSON.parse(_srow.value);
+            if (_s.alert_enabled === false) alertEnabled = false;
+          }
+        } catch (_e) {}
       const stock = materials.map((m) => {
         const totalIn = entries.filter((e) => e.material_name === m.name).reduce((s, e) => s + Number(e.quantity || 0), 0)
           + processings.filter((pr) => pr.target_material === m.name).reduce((s, pr) => s + Number(pr.target_qty || 0), 0);
@@ -777,7 +787,7 @@ async function handleApi(request, env) {
         const totalReturn = returns.filter((r) => r.material_name === m.name).reduce((s, r) => s + Number(r.return_weight || 0), 0);
         const totalTransfer = transferItems.filter((i) => i.item_name === m.name).reduce((s, i) => s + Number(i.quantity || 0), 0);
         const current = Number(m.initial_stock || 0) + totalIn - totalOut - totalWaste + totalReturn - totalTransfer;
-        const status = current <= 0 ? 'تمام شد' : current < (m.min_alert || 0) ? 'هشدار' : 'عادی';
+        const status = current <= 0 ? 'تمام شد' : (!alertEnabled ? 'عادی' : (current < (m.min_alert || 0) ? 'هشدار' : 'عادی'));
         return {
           ...m,
           total_in: totalIn,
@@ -866,8 +876,8 @@ async function handleApi(request, env) {
       const safe = {
         company_name: String(body.company_name || 'غذای انصار').slice(0, 80),
         default_min_alert: Number(body.default_min_alert) || 5,
-        alert_enabled: body.alert_enabled !== false,
-        backup_hint: body.backup_hint !== false,
+        alert_enabled: body.alert_enabled === true || body.alert_enabled === 'true' || body.alert_enabled === 1,
+        backup_hint: body.backup_hint === true || body.backup_hint === 'true' || body.backup_hint === 1,
       };
       await env.DB.prepare(
         "INSERT INTO app_meta (key, value) VALUES ('settings', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
