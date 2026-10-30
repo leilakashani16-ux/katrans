@@ -118,6 +118,7 @@
       b.classList.toggle('active', b.getAttribute('data-theme') === id);
     });
     applyIcons(id);
+    setTimeout(animateRealCharts, 100);
     if (!silent && typeof toast === 'function') {
       var t = THEMES.find(function (x) { return x.id === id; });
       toast((t && t.title) || id, 'info');
@@ -199,27 +200,80 @@
     if (el) el.classList.remove('show');
   }
 
-  function animateRealCharts() {
+  function enhanceSpaceCharts() {
+    var wrap = document.getElementById('dash-charts-wrap');
     var root = document.getElementById('dash-charts');
     if (!root) return;
-    root.querySelectorAll('.glass-card').forEach(function (card, i) {
-      // bars
-      card.querySelectorAll('[style*="width"]').forEach(function (bar, j) {
-        if (bar.offsetHeight > 30) return;
-        var st = bar.getAttribute('style') || '';
-        if (!/width\s*:\s*[\d.]+%/.test(st)) return;
-        bar.classList.add('te-bar-anim');
-        bar.style.animationDelay = (j * 0.07) + 's';
-      });
-      // donut-like circles
-      card.querySelectorAll('div').forEach(function (el) {
+    var theme = getTheme();
+    var spaceOn = (theme === 'orbit' || theme === 'ember' || theme === 'default');
+    if (wrap) {
+      wrap.classList.toggle('te-space-on', true);
+      var stars = document.getElementById('te-stars');
+      if (!stars) {
+        stars = document.createElement('canvas');
+        stars.id = 'te-stars';
+        wrap.style.position = 'relative';
+        wrap.insertBefore(stars, wrap.firstChild);
+        startStars(stars, wrap);
+      }
+    }
+    root.querySelectorAll('.glass-card').forEach(function (card, ci) {
+      card.classList.add('te-space-card');
+      card.querySelectorAll('.rounded-full').forEach(function (el) {
         var st = el.getAttribute('style') || '';
-        if (/conic-gradient/i.test(st) || (el.classList.contains('rounded-full') && el.offsetWidth >= 70 && el.offsetWidth <= 220)) {
-          el.classList.add('te-donut-anim', 'te-live');
-          el.style.animationDelay = (i * 0.1) + 's';
+        if (!/conic-gradient/i.test(st)) return;
+        if (el.closest('.te-donut-stage') || el.classList.contains('te-donut-core')) return;
+        var parent = el.parentElement;
+        if (!parent) return;
+        parent.classList.add('te-donut-stage');
+        el.classList.add('te-donut-core');
+        if (!parent.querySelector('.te-donut-ring')) {
+          var r1 = document.createElement('div'); r1.className = 'te-donut-ring';
+          var r2 = document.createElement('div'); r2.className = 'te-donut-ring2';
+          parent.appendChild(r1); parent.appendChild(r2);
         }
       });
+      card.querySelectorAll('.h-2').forEach(function (track) {
+        track.classList.add('te-bar-track');
+        var fill = track.querySelector('div[style*="width"]');
+        if (!fill || fill.classList.contains('te-bar-fill')) return;
+        fill.classList.add('te-bar-fill');
+        fill.style.animation = 'none';
+        void fill.offsetWidth;
+        fill.style.animation = '';
+        fill.style.animationDelay = (ci * 0.06 + Math.random() * 0.1) + 's';
+      });
     });
+  }
+  function startStars(canvas, host) {
+    var ctx = canvas.getContext('2d');
+    function resize() {
+      canvas.width = Math.max(host.clientWidth || 600, 100);
+      canvas.height = Math.max(host.clientHeight || 400, 100);
+    }
+    var pts = [];
+    for (var i = 0; i < 70; i++) {
+      pts.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + 0.3, s: Math.random() * 0.5 + 0.1, a: Math.random() * 6 });
+    }
+    function frame() {
+      if (!document.getElementById('te-stars')) return;
+      resize();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pts.forEach(function (p) {
+        p.a += p.s * 0.025;
+        var alpha = 0.2 + Math.abs(Math.sin(p.a)) * 0.75;
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(190,210,255,' + alpha + ')';
+        ctx.arc(p.x * canvas.width, p.y * canvas.height, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      window.__teStarsRAF = requestAnimationFrame(frame);
+    }
+    if (window.__teStarsRAF) cancelAnimationFrame(window.__teStarsRAF);
+    window.__teStarsRAF = requestAnimationFrame(frame);
+  }
+  function animateRealCharts() {
+    enhanceSpaceCharts();
   }
 
   function patchDashboard() {
