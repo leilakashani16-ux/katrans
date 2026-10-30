@@ -407,6 +407,7 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
   await ensureColumn(db, 'materials', 'category', "TEXT DEFAULT 'food'");
   await ensureColumn(db, 'entries', 'unit_price', 'REAL');
   await ensureColumn(db, 'entries', 'total_price', 'REAL');
+  await ensureColumn(db, 'entries', 'waste_qty', 'REAL');
   await db.prepare(`CREATE TABLE IF NOT EXISTS processings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
