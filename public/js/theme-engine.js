@@ -156,7 +156,23 @@
     panel.className = 'mt-4 pt-4 border-t border-slate-700/40';
     panel.innerHTML = '<div class="text-sm font-medium mb-1">حال و هوا / تم</div><p class="text-xs text-slate-400 mb-2">ظاهر برنامه، آیکون‌ها و حس صفحات</p>';
     panel.appendChild(makeSettingsThemes());
+    var fx = document.createElement('div');
+    fx.className = 'mt-3 text-xs text-slate-400';
+    fx.innerHTML = '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+      '<input type="checkbox" id="te-ember-leaves" style="width:16px;height:16px" />' +
+      '<span>اخگر: برگ‌ریزان پاییزی به‌جای جرقه</span></label>' +
+      '<p class="mt-1 opacity-70">مدار روح: ستاره‌های چشمک‌زن خودکار فعال است</p>';
+    panel.appendChild(fx);
     form.appendChild(panel);
+    setTimeout(function () {
+      var cb = document.getElementById('te-ember-leaves');
+      if (!cb) return;
+      try { cb.checked = localStorage.getItem('katrans_ember_leaves') === '1'; } catch (_) {}
+      cb.onchange = function () {
+        if (window.ThemeFxBg && ThemeFxBg.setEmberLeaves) ThemeFxBg.setEmberLeaves(cb.checked);
+        else try { localStorage.setItem('katrans_ember_leaves', cb.checked ? '1' : '0'); } catch (_) {}
+      };
+    }, 100);
   }
 
   function injectBottom() {

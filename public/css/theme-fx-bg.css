@@ -1,0 +1,67 @@
+/* پس‌زمینه زنده تم‌ها — سبک، فقط فرانت */
+
+#te-fx-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  display: none;
+}
+html.te-orbit #te-fx-bg,
+html.te-ember #te-fx-bg {
+  display: block;
+}
+/* محتوا بالای پس‌زمینه */
+#app, #login-screen, #te-bottom-nav, #mobile-topbar, #modal-root, #toast {
+  position: relative;
+  z-index: 1;
+}
+#te-bottom-nav { z-index: 900 !important; }
+#modal-root, #toast { z-index: 1000 !important; }
+
+#te-fx-bg canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* لایه‌های CSS کمکی */
+#te-fx-bg .te-fx-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* —— مدار روح: مه کهکشانی —— */
+html.te-orbit #te-fx-bg .te-fx-nebula {
+  background:
+    radial-gradient(ellipse 90% 60% at 20% 10%, rgba(99,102,241,0.22), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(34,211,238,0.12), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(167,139,250,0.1), transparent 60%);
+  animation: teNebula 14s ease-in-out infinite alternate;
+}
+@keyframes teNebula {
+  from { opacity: 0.75; transform: scale(1); }
+  to { opacity: 1; transform: scale(1.05); }
+}
+
+/* —— اخگر: شعله نرم پایین صفحه —— */
+html.te-ember #te-fx-bg .te-fx-flame-base {
+  background:
+    radial-gradient(ellipse 100% 45% at 50% 100%, rgba(234,88,12,0.35), transparent 70%),
+    radial-gradient(ellipse 60% 30% at 30% 100%, rgba(251,146,60,0.25), transparent 65%),
+    radial-gradient(ellipse 50% 28% at 75% 100%, rgba(220,38,38,0.2), transparent 60%);
+  animation: teFlamePulse 3.5s ease-in-out infinite alternate;
+}
+@keyframes teFlamePulse {
+  from { opacity: 0.7; transform: translateY(4px) scaleY(0.95); }
+  to { opacity: 1; transform: translateY(0) scaleY(1.05); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #te-fx-bg .te-fx-nebula,
+  #te-fx-bg .te-fx-flame-base {
+    animation: none !important;
+  }
+}
