@@ -1,15 +1,16 @@
 /**
  * materials-category.js — دسته‌بندی مواد + فیلتر
  * food | packaging | cleaning | beverage | admin | other
+ * لیبل‌ها: مواد خوراکی / ظروف / بهداشتی / نوشیدنی / اداری / لجستیک
  */
 (function () {
   var CATS = [
-    { id: 'food', label: 'مواد غذایی' },
-    { id: 'packaging', label: 'بسته‌بندی / ظرف' },
-    { id: 'cleaning', label: 'نظافت' },
+    { id: 'food', label: 'مواد خوراکی' },
+    { id: 'packaging', label: 'ظروف' },
+    { id: 'cleaning', label: 'بهداشتی' },
     { id: 'beverage', label: 'نوشیدنی' },
-    { id: 'admin', label: 'اداری / عمومی' },
-    { id: 'other', label: 'سایر' }
+    { id: 'admin', label: 'اداری' },
+    { id: 'other', label: 'لجستیک' }
   ];
   var LABEL = {};
   CATS.forEach(function (c) { LABEL[c.id] = c.label; });
@@ -17,10 +18,11 @@
   function guessCategory(name, code) {
     var n = String(name || '');
     var c = String(code || '');
-    if (/ظرف|پاکت|پک قاشق|جعبه|سینی|نایلون|هات دلیوری|آلومینیوم|قابلمه|دیس/.test(n)) return 'packaging';
-    if (/اسکاج|الکل|اسپری|باتری|پارچه تنظیف|شوینده|دستکش/.test(n)) return 'cleaning';
-    if (/نوشابه|آب معدنی|دوغ|دلستر|ماءالشعیر/.test(n)) return 'beverage';
-    if (/رول پرینتر|هزینه|ست یکبار/.test(n)) return 'admin';
+    if (/ظرف|پاکت|پک قاشق|جعبه|سینی|نایلون|هات دلیوری|آلومینیوم|قابلمه|دیس|لیوان|قاشق|چنگال/.test(n)) return 'packaging';
+    if (/اسکاج|الکل|اسپری|باتری|پارچه تنظیف|شوینده|دستکش|ماسک|بهداشت|ضدعفونی/.test(n)) return 'cleaning';
+    if (/نوشابه|آب معدنی|دوغ|دلستر|ماءالشعیر|آبمیوه/.test(n)) return 'beverage';
+    if (/رول پرینتر|هزینه|ست یکبار|کاغذ|خودکار|اداری/.test(n)) return 'admin';
+    if (/کارتن|جعبه حمل|نایلون بزرگ|لجستیک|حمل/.test(n)) return 'other';
     return 'food';
   }
 
