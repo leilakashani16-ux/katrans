@@ -1565,6 +1565,7 @@ Pages.dashboard = async function () {
 
 
   // برنامه امروز vs واقعی
+  const todayProds = productions.filter(p => p.date === today);
   const todayPlans = plans.filter(pl => pl.day === today);
   const planVsActual = todayPlans.map(pl => {
     const done = todayProds.filter(p => p.product_name === pl.product_name)

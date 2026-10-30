@@ -1,13 +1,8 @@
-# فیکس فوری داشبورد (بنر دوبل)
+# فیکس: todayProds is not defined
 
-## مشکل
-پیام روز دو بار تکرار می‌شد و صفحه به‌هم می‌ریخت.
+در داشبورد متغیر todayProds قبل از استفاده تعریف نشده بود.
+یک خط اضافه شد:
+const todayProds = productions.filter(p => p.date === today);
 
-## اصلاح
-فقط `public/js/dash-motiv.js` را جایگزین کنید.
-
-- یک بنر فقط
-- اگر از قبل بود حذف می‌شود
-- فیلتر تاریخ مثل قبل درست است
-
+فایل: public/js/bundle.js
 Deploy + Hard Refresh
