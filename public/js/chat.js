@@ -293,7 +293,7 @@
         ? '<span class="text-[10px] text-emerald-400">نوتیف فعال</span>'
         : '<button type="button" class="btn-ghost text-xs" onclick="Pages.requestChatNotify()">فعال‌سازی نوتیف</button>';
 
-    document.getElementById('page-content').innerHTML =
+    var html =
       '<div class="mb-3 flex items-center justify-between gap-2 flex-wrap">' +
       '<h1 class="text-xl font-bold">💬 گفتگوی تیم</h1>' +
       notifyBtn +
@@ -306,8 +306,8 @@
       (canWrite
         ? (window.__chatReplyTo
             ? '<div id="chat-reply-bar" class="text-xs text-slate-300 mb-2 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/40">' +
-              '<span class="flex-1">پاسخ به: ' + escapeHtml(displayName(window.__chatMsgIndex[window.__chatReplyTo] || {})) +
-              ' — ' + escapeHtml(String((window.__chatMsgIndex[window.__chatReplyTo] || {}).body || '').slice(0, 40)) + '</span>' +
+              '<span class="flex-1">پاسخ به: ' + escapeHtml(displayName((window.__chatMsgIndex && window.__chatMsgIndex[window.__chatReplyTo]) || {})) +
+              ' — ' + escapeHtml(String(((window.__chatMsgIndex && window.__chatMsgIndex[window.__chatReplyTo]) || {}).body || '').slice(0, 40)) + '</span>' +
               '<button type="button" class="text-red-400 text-[10px]" id="chat-reply-cancel">لغو</button></div>'
             : '') +
           '<form id="chat-form" class="flex gap-2 items-end">' +
@@ -320,6 +320,7 @@
         : '<p class="text-center text-xs text-slate-500 py-2">فقط مدیران می‌توانند در این کانال بنویسند</p>') +
       '</div>';
 
+    // navigate منتظر return رشته HTML است — innerHTML مستقیم نگذار
     setTimeout(function () {
       var sc = document.getElementById('chat-scroll');
       if (sc) sc.scrollTop = sc.scrollHeight;
@@ -328,10 +329,10 @@
         cancel.onclick = function () {
           window.__chatReplyTo = null;
           if (typeof navigate === 'function') navigate('chat');
-          else Pages.chat();
         };
       }
     }, 80);
+    return html;
   };
 
   document.addEventListener('submit', function (ev) {
