@@ -1,0 +1,142 @@
+
+/* ui-final — نوار جمع‌وجور + نمودار زنده واقعی */
+
+/* نوار پایین: فقط موبایل، کوتاه، جمع‌شونده */
+#te-bottom-nav {
+  display: none !important;
+}
+@media (max-width: 1023px) {
+  #te-bottom-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 900; /* زیر مودال‌ها */
+    height: 52px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    background: rgba(8, 12, 22, 0.96);
+    border-top: 1px solid rgba(51, 65, 85, 0.6);
+    backdrop-filter: blur(12px);
+    transition: transform 0.28s ease, opacity 0.28s ease;
+    transform: translateY(0);
+  }
+  #te-bottom-nav.te-nav-hidden {
+    transform: translateY(110%);
+    opacity: 0;
+    pointer-events: none;
+  }
+  #te-bottom-nav::-webkit-scrollbar { display: none; }
+  #te-bottom-nav button {
+    flex: 0 0 auto;
+    min-width: 56px;
+    height: 52px;
+    background: 0; border: 0; color: #94a3b8;
+    font-size: 9px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px;
+    padding: 4px 6px; cursor: pointer;
+  }
+  #te-bottom-nav button .ico { font-size: 15px; line-height: 1; }
+  #te-bottom-nav button.active { color: #e2e8f0; }
+
+  /* فضای کافی برای دکمه ذخیره */
+  #page-content {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* وقتی نوار مخفی است فضای کمتر */
+  body.te-nav-collapsed #page-content {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+/* دکمه شناور باز کردن منو وقتی نوار مخفی است */
+#te-nav-fab {
+  display: none;
+}
+@media (max-width: 1023px) {
+  #te-nav-fab {
+    display: none;
+    position: fixed;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    z-index: 910;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: 1px solid rgba(148,163,184,0.35);
+    background: rgba(15, 23, 42, 0.95);
+    color: #e2e8f0;
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,0,0,.4);
+    align-items: center; justify-content: center;
+  }
+  body.te-nav-collapsed #te-nav-fab {
+    display: flex;
+  }
+}
+
+/* —— دونات زنده —— */
+#dash-charts .te-donut-host {
+  position: relative;
+  width: 9rem; /* w-36 */
+  height: 9rem;
+  flex-shrink: 0;
+}
+#dash-charts .te-donut-host .te-spin {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  will-change: transform;
+  box-shadow:
+    0 12px 28px rgba(0,0,0,.35),
+    0 0 20px rgba(34,211,238,.15);
+}
+#dash-charts .te-donut-host .te-hole {
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #1e293b, #0f172a 75%);
+  border: 1px solid rgba(51,65,85,.5);
+  pointer-events: none;
+  z-index: 2;
+}
+#dash-charts .te-donut-host .te-orbit {
+  position: absolute;
+  inset: -12%;
+  border-radius: 50%;
+  border: 1.5px solid rgba(165,243,252,.28);
+  pointer-events: none;
+  animation: teOrbitSpin 12s linear infinite;
+}
+#dash-charts .te-donut-host .te-orbit2 {
+  position: absolute;
+  inset: -20%;
+  border-radius: 50%;
+  border: 1px dashed rgba(167,139,250,.3);
+  pointer-events: none;
+  animation: teOrbitSpin 20s linear infinite reverse;
+}
+@keyframes teOrbitSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* میله درخشان */
+#dash-charts .te-bar-fill {
+  position: relative;
+  overflow: hidden;
+}
+#dash-charts .te-bar-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.4), transparent);
+  background-size: 200% 100%;
+  animation: teBarShine 2.2s ease-in-out infinite;
+}
+@keyframes teBarShine {
+  0% { background-position: 120% 0; }
+  100% { background-position: -120% 0; }
+}
