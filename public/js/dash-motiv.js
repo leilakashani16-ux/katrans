@@ -1,8 +1,11 @@
 /**
- * پیام انگیزشی داشبورد + اطمینان از فیلتر تاریخ
- * بعد از bundle و api-fast لود شود
+ * پیام انگیزشی داشبورد + فیکس فیلتر
+ * ضد دوبل‌شدن بنر (با theme-engine و بقیه سازگار)
  */
 (function () {
+  if (window.__dashMotivBooted) return;
+  window.__dashMotivBooted = true;
+
   var MESSAGES = [
     '{name}، حضورت یعنی نظم؛ امروز هم با دقت بدرخش.',
     'سلام {name} — هر ثبت تمیز، یک قدم به تیم قوی‌تر.',
@@ -48,45 +51,67 @@
     var hash = 0;
     for (var i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
     var tpl = MESSAGES[hash % MESSAGES.length];
-    // نام کامل در پیام؛ اگر خیلی بلند بود فقط نام اول
     var display = name.length > 22 ? firstName(name) : name;
     return tpl.replace(/\{name\}/g, display);
   }
 
   function bannerHtml() {
-    var msg = pickMessage();
+    var msg = pickMessage()
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     return (
-      '<div class="dash-motiv mb-4 rounded-2xl px-4 py-3 flex items-start gap-3" style="' +
+      '<div class="dash-motiv mb-4 rounded-2xl px-4 py-3 flex items-start gap-3" data-dash-motiv="1" style="' +
       'background:linear-gradient(135deg,rgba(16,185,129,0.12),rgba(56,189,248,0.08));' +
-      'border:1px solid rgba(52,211,153,0.22);' +
-      '">' +
+      'border:1px solid rgba(52,211,153,0.22)">' +
       '<span style="font-size:1.25rem;line-height:1.2" aria-hidden="true">✨</span>' +
       '<div class="min-w-0 flex-1">' +
       '<div class="text-[10px] uppercase tracking-wide text-emerald-400/80 mb-0.5 font-semibold">پیام روز</div>' +
-      '<p class="text-sm text-slate-100 leading-relaxed m-0">' +
-      msg.replace(/</g, '&lt;').replace(/>/g, '&gt;') +
-      '</p></div></div>'
+      '<p class="text-sm text-slate-100 leading-relaxed m-0">' + msg + '</p>' +
+      '</div></div>'
     );
+  }
+
+  /** حذف بنرهای تکراری از HTML قبل از اضافه کردن یکی */
+  function stripMotiv(html) {
+    if (!html || typeof html !== 'string') return html || '';
+    // حذف همه بلوک‌های dash-motiv
+    return html.replace(/<div class="dash-motiv\b[\s\S]*?<\/div>\s*<\/div>/gi, '');
+  }
+
+  function injectMotiv(html) {
+    html = stripMotiv(typeof html === 'string' ? html : html == null ? '' : String(html));
+    return bannerHtml() + html;
+  }
+
+  function copyFlags(from, to) {
+    if (!from || !to) return;
+    ['__motiv', '__teV4', '__fx', '__chartsFx'].forEach(function (k) {
+      if (from[k]) to[k] = from[k];
+    });
   }
 
   function patchDashboard() {
     if (typeof Pages === 'undefined' || typeof Pages.dashboard !== 'function') return false;
     if (Pages.dashboard.__motiv) return true;
+
     var prev = Pages.dashboard;
-    Pages.dashboard = async function () {
+    var wrapped = async function () {
       var html = await prev.apply(this, arguments);
-      if (typeof html !== 'string') html = html == null ? '' : String(html);
-      // بنر را بالای محتوا بگذار (بعد از هر هدر داخلی اگر هست، اول صفحه)
-      return bannerHtml() + html;
+      return injectMotiv(html);
     };
-    Pages.dashboard.__motiv = true;
+    wrapped.__motiv = true;
+    copyFlags(prev, wrapped);
+    // theme-engine اگر دوباره چک کند، فکر نکند باید از نو بپیچد
+    if (prev.__teV4) wrapped.__teV4 = true;
+    Pages.dashboard = wrapped;
     return true;
   }
 
-  // اطمینان دوباره از applyFilter اگر bundle کهنه بود
   function patchFilter() {
-    if (typeof Pages === 'undefined' || typeof Pages.applyFilter !== 'function') return;
-    if (Pages.applyFilter.__fixed) return;
+    if (typeof Pages === 'undefined') return;
+    if (Pages.applyFilter && Pages.applyFilter.__fixed) return;
+
     Pages.applyFilter = function (page) {
       var df = (document.getElementById('f-df') || {}).value || '';
       var dt = (document.getElementById('f-dt') || {}).value || '';
@@ -97,13 +122,16 @@
       if (q) p.set('q', q);
       try {
         var cur = new URLSearchParams(location.hash.split('?')[1] || '');
-        if (page === 'dashboard' && cur.get('cperiod') && !p.get('cperiod')) p.set('cperiod', cur.get('cperiod'));
+        if (page === 'dashboard' && cur.get('cperiod') && !p.get('cperiod')) {
+          p.set('cperiod', cur.get('cperiod'));
+        }
       } catch (_) {}
       var target = page + (p.toString() ? '?' + p.toString() : '');
       if (typeof navigate === 'function') navigate(target);
       else location.hash = '#' + target;
     };
     Pages.applyFilter.__fixed = true;
+
     Pages.clearFilter = function (page) {
       if (typeof navigate === 'function') navigate(page);
       else location.hash = '#' + page;
@@ -112,19 +140,25 @@
 
   function boot() {
     patchFilter();
-    if (!patchDashboard()) {
-      var n = 0;
-      var t = setInterval(function () {
-        n++;
-        patchFilter();
-        if (patchDashboard() || n > 50) clearInterval(t);
-      }, 120);
-    }
+    patchDashboard();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
-  setTimeout(boot, 600);
 
-  console.log('[dash-motiv] filter fix + motiv ready');
+  // theme-engine ممکن است بعداً dashboard را عوض کند — فقط یک‌بار دیگر وصل کن
+  var tries = 0;
+  var timer = setInterval(function () {
+    tries++;
+    patchFilter();
+    patchDashboard();
+    // اگر بنر دوبل در DOM بود پاک کن
+    try {
+      var list = document.querySelectorAll('[data-dash-motiv="1"]');
+      for (var i = 1; i < list.length; i++) list[i].remove();
+    } catch (_) {}
+    if (tries > 25) clearInterval(timer);
+  }, 400);
+
+  console.log('[dash-motiv] v2 single-banner + filter fix');
 })();
