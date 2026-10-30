@@ -40,14 +40,22 @@
     return '<span class="text-[10px] px-1.5 py-0.5 rounded ' + (colors[id] || colors.other) + '">' + label + '</span>';
   }
 
-  // inject category into material form
+  // inject category into material form (must target #mat-form, NOT the login form)
   var _show = Pages.showMaterialForm;
   if (typeof _show === 'function') {
     Pages.showMaterialForm = async function (id) {
       var r = await _show.apply(this, arguments);
       setTimeout(function () {
-        var form = document.querySelector('#material-form, form');
+        // فقط فرم ماده داخل مودال — هرگز فرم لاگین را نگیر
+        var form =
+          document.getElementById('mat-form') ||
+          document.querySelector('#modal-root form') ||
+          document.querySelector('.modal form') ||
+          document.querySelector('#material-form');
         if (!form || form.querySelector('[name="category"]')) return;
+        // اگر هنوز فرم لاگین است، ول کن
+        if (form.querySelector('#login-user, [name="username"]') || form.id === 'login-form') return;
+
         var wrap = document.createElement('div');
         wrap.className = 'mb-2';
         var opts = CATS.map(function (c) {
@@ -55,21 +63,40 @@
         }).join('');
         wrap.innerHTML =
           '<label class="text-xs text-slate-400">دسته‌بندی</label>' +
-          '<select name="category" class="input-field">' + opts + '</select>';
-        var anchor = form.querySelector('[name="unit"], [name="min_alert"], [name="description"]');
-        if (anchor && anchor.parentElement) {
-          anchor.parentElement.parentElement.insertBefore(wrap, anchor.parentElement);
+          '<select name="category" class="input-field w-full">' + opts + '</select>';
+
+        // بعد از فیلد نام بگذار (جای منطقی)
+        var nameInput = form.querySelector('[name="name"]');
+        if (nameInput && nameInput.parentElement) {
+          nameInput.parentElement.insertAdjacentElement('afterend', wrap);
         } else {
-          form.insertBefore(wrap, form.firstChild);
+          var anchor = form.querySelector('[name="unit"], [name="min_alert"], [name="description"]');
+          if (anchor && anchor.parentElement) {
+            anchor.parentElement.parentElement.insertBefore(wrap, anchor.parentElement);
+          } else {
+            form.insertBefore(wrap, form.firstChild);
+          }
         }
+
         if (id) {
           DB.getById('materials', id).then(function (m) {
             if (!m) return;
             var sel = form.querySelector('[name="category"]');
             if (sel) sel.value = m.category || guessCategory(m.name, m.code);
           }).catch(function () {});
+        } else {
+          // ماده جدید: حدس اولیه از روی نام (اگر بعداً نام وارد شد)
+          var nameEl = form.querySelector('[name="name"]');
+          if (nameEl) {
+            nameEl.addEventListener('blur', function () {
+              var sel = form.querySelector('[name="category"]');
+              if (sel && (!sel.value || sel.value === 'food')) {
+                sel.value = guessCategory(nameEl.value, (form.querySelector('[name="code"]') || {}).value);
+              }
+            });
+          }
         }
-      }, 120);
+      }, 180);
       return r;
     };
   }
