@@ -13,18 +13,71 @@
     { page: 'entries', label: 'ورود', icon: '📥' },
     { page: 'productions', label: 'تولید', icon: '🍳' },
     { page: 'materials', label: 'مواد', icon: '📦' },
-    { page: 'products', label: 'محصول', icon: '🍢' },
     { page: 'personnel', label: 'پرسنل', icon: '👥' },
+    { page: 'chat', label: 'گفتگو', icon: '💬' },
     { page: 'transfers', label: 'ارسال', icon: '🚚' },
     { page: 'more', label: 'بیشتر', icon: '⋯' }
   ];
-  var MORE_PAGES = ['wastes', 'processings', 'chat', 'reports', 'settings', 'users', 'stocktake', 'audit'];
+  // chat رفت روی نوار اصلی — از more حذف می‌شود تا تکراری نباشد
+  var MORE_PAGES = ['products', 'wastes', 'processings', 'reports', 'settings', 'users', 'stocktake', 'audit'];
 
   function stripOldNav() {
     var old = document.getElementById('te-bottom-nav');
     if (old) old.remove();
     var fab = document.getElementById('te-nav-fab');
     if (fab) fab.remove();
+  }
+
+  var MORE_LABELS = {
+    wastes: { icon: '🗑️', label: 'ضایعات' },
+    processings: { icon: '🔄', label: 'فرآوری' },
+    chat: { icon: '💬', label: 'گفتگو' },
+    reports: { icon: '📑', label: 'گزارش‌ها' },
+    settings: { icon: '⚙️', label: 'تنظیمات' },
+    users: { icon: '🔐', label: 'کاربران' },
+    stocktake: { icon: '📋', label: 'انبارگردانی' },
+    audit: { icon: '📜', label: 'لاگ فعالیت' }
+  };
+
+  function openMoreSheet() {
+    var items = MORE_PAGES.map(function (p) {
+      var meta = MORE_LABELS[p] || { icon: '•', label: p };
+      return (
+        '<button type="button" class="te-more-item" data-go="' + p + '" style="' +
+        'display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;' +
+        'background:rgba(30,41,59,0.85);border:1px solid rgba(71,85,105,0.45);' +
+        'border-radius:14px;color:#e2e8f0;font-size:0.95rem;margin-bottom:8px;cursor:pointer;text-align:right">' +
+        '<span style="font-size:1.25rem">' + meta.icon + '</span>' +
+        '<span style="flex:1;font-weight:600">' + meta.label + '</span>' +
+        '<span style="opacity:.4">‹</span></button>'
+      );
+    }).join('');
+
+    if (typeof showModal === 'function') {
+      showModal(
+        '<div class="modal max-w-sm" style="padding:1.1rem">' +
+        '<h3 class="text-lg font-bold mb-3">بیشتر</h3>' +
+        '<div id="te-more-list">' + items + '</div>' +
+        '<button type="button" class="btn-ghost w-full mt-2" onclick="closeModal()">بستن</button></div>'
+      );
+    } else {
+      // fallback بدون مودال
+      if (typeof navigate === 'function') navigate('chat');
+      else location.hash = '#chat';
+      return;
+    }
+
+    var list = document.getElementById('te-more-list');
+    if (list) {
+      list.onclick = function (ev) {
+        var t = ev.target.closest && ev.target.closest('[data-go]');
+        if (!t) return;
+        var page = t.getAttribute('data-go');
+        try { if (typeof closeModal === 'function') closeModal(); } catch (_) {}
+        if (typeof navigate === 'function') navigate(page);
+        else location.hash = '#' + page;
+      };
+    }
   }
 
   function injectNav() {
@@ -35,14 +88,15 @@
       var b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('data-page', it.page);
-      b.innerHTML = '<span class="ico">' + it.icon + '</span><span>' + it.label + '</span>';
+      // بج چت روی «بیشتر» اگر بعداً خواستیم
+      var badge = it.page === 'chat'
+        ? '<span id="chat-nav-badge" class="hidden chat-badge" style="position:absolute;top:2px;left:6px"></span>'
+        : '';
+      b.style.position = 'relative';
+      b.innerHTML = badge + '<span class="ico">' + it.icon + '</span><span>' + it.label + '</span>';
       b.onclick = function () {
         if (it.page === 'more') {
-          // باز کردن منوی کوتاه
-          var extra = MORE_PAGES.map(function (p) {
-            return p;
-          }).join(',');
-          if (typeof navigate === 'function') navigate('settings');
+          openMoreSheet();
           return;
         }
         if (typeof navigate === 'function') navigate(it.page);
@@ -209,9 +263,36 @@
     window.navigate.__uiFinal = true;
   }
 
-  // Mutation: وقتی فرم به صفحه اضافه شد نوار را جمع کن
-  var obs = new MutationObserver(function () {
+  // Mutation: وقتی فرم به صفحه اضافه شد نوار را جمع کن + بعد از ورق نمودار انیمیشن را برگردان
+  var obs = new MutationObserver(function (mutations) {
     syncNavVisibility();
+    var needCharts = false;
+    for (var i = 0; i < mutations.length; i++) {
+      var m = mutations[i];
+      if (m.target && (m.target.id === 'dash-charts' || m.target.id === 'dash-charts-wrap' ||
+          (m.target.closest && (m.target.closest('#dash-charts') || m.target.closest('#dash-charts-wrap'))))) {
+        needCharts = true;
+        break;
+      }
+      if (m.addedNodes) {
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          var n = m.addedNodes[j];
+          if (n.id === 'dash-charts' || n.id === 'dash-charts-wrap' ||
+              (n.querySelector && n.querySelector('#dash-charts, #dash-charts-wrap, [style*="conic-gradient"]'))) {
+            needCharts = true;
+            break;
+          }
+        }
+      }
+      if (needCharts) break;
+    }
+    if (needCharts) {
+      clearTimeout(window.__teDonutRetry);
+      window.__teDonutRetry = setTimeout(function () {
+        var pure = (location.hash || '#dashboard').replace(/^#/, '').split('?')[0];
+        if (pure === 'dashboard' || pure === '') enhanceDonuts();
+      }, 60);
+    }
   });
 
   function boot() {
