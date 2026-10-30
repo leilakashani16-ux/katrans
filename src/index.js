@@ -542,6 +542,13 @@ db.prepare('INSERT INTO productions (date,product_name,quantity,material_weight,
     created_at TEXT DEFAULT (datetime('now'))
   )`).run();
 
+  // چت فاز ۱: کانال، soft-delete، ویرایش، client_id
+  await ensureColumn(db, 'chat_messages', 'channel', "TEXT DEFAULT 'general'");
+  await ensureColumn(db, 'chat_messages', 'reply_to', 'INTEGER');
+  await ensureColumn(db, 'chat_messages', 'edited_at', 'TEXT');
+  await ensureColumn(db, 'chat_messages', 'deleted', 'INTEGER DEFAULT 0');
+  await ensureColumn(db, 'chat_messages', 'client_id', 'TEXT');
+
 
   // seed a few general items if empty
   try {
@@ -1021,6 +1028,15 @@ async function handleApi(request, env) {
         body.body = String(body.body || body.text || '').trim().slice(0, 2000);
         if (!body.body) return json({ error: 'پیام خالی است' }, 400);
         delete body.text;
+        const allowedCh = ['general', 'kitchen', 'warehouse', 'management', 'announce'];
+        let ch = String(body.channel || 'general').toLowerCase();
+        if (!allowedCh.includes(ch)) ch = 'general';
+        if (ch === 'announce' && user.role !== 'admin') {
+          return json({ error: 'فقط مدیر می‌تواند در اعلامیه بنویسد' }, 403);
+        }
+        body.channel = ch;
+        body.deleted = 0;
+        if (body.client_id) body.client_id = String(body.client_id).slice(0, 64);
       }
 
       
@@ -1202,7 +1218,12 @@ const keys = Object.keys(body).filter((k) => body[k] !== undefined);
         if (user.role !== 'admin' && row.username !== user.username) {
           return json({ error: 'فقط پیام خودتان یا مدیر' }, 403);
         }
-        await env.DB.prepare(`DELETE FROM chat_messages WHERE id = ?`).bind(id).run();
+        // soft-delete
+        try {
+          await env.DB.prepare(`UPDATE chat_messages SET deleted = 1 WHERE id = ?`).bind(id).run();
+        } catch (eSoft) {
+          await env.DB.prepare(`DELETE FROM chat_messages WHERE id = ?`).bind(id).run();
+        }
         await bumpDataVersion(env.DB);
         return json({ ok: true });
       }
