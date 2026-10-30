@@ -140,3 +140,14 @@
   0% { background-position: 120% 0; }
   100% { background-position: -120% 0; }
 }
+
+
+/* حذف نوار بزرگ سایدبار موبایل — فقط te-bottom-nav بماند */
+@media (max-width: 1023px) {
+  #sidebar {
+    display: none !important;
+  }
+  main.flex-1 {
+    margin-right: 0 !important;
+  }
+}

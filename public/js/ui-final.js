@@ -209,9 +209,36 @@
     window.navigate.__uiFinal = true;
   }
 
-  // Mutation: وقتی فرم به صفحه اضافه شد نوار را جمع کن
-  var obs = new MutationObserver(function () {
+  // Mutation: وقتی فرم به صفحه اضافه شد نوار را جمع کن + بعد از ورق نمودار انیمیشن را برگردان
+  var obs = new MutationObserver(function (mutations) {
     syncNavVisibility();
+    var needCharts = false;
+    for (var i = 0; i < mutations.length; i++) {
+      var m = mutations[i];
+      if (m.target && (m.target.id === 'dash-charts' || m.target.id === 'dash-charts-wrap' ||
+          (m.target.closest && (m.target.closest('#dash-charts') || m.target.closest('#dash-charts-wrap'))))) {
+        needCharts = true;
+        break;
+      }
+      if (m.addedNodes) {
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          var n = m.addedNodes[j];
+          if (n.id === 'dash-charts' || n.id === 'dash-charts-wrap' ||
+              (n.querySelector && n.querySelector('#dash-charts, #dash-charts-wrap, [style*="conic-gradient"]'))) {
+            needCharts = true;
+            break;
+          }
+        }
+      }
+      if (needCharts) break;
+    }
+    if (needCharts) {
+      clearTimeout(window.__teDonutRetry);
+      window.__teDonutRetry = setTimeout(function () {
+        var pure = (location.hash || '#dashboard').replace(/^#/, '').split('?')[0];
+        if (pure === 'dashboard' || pure === '') enhanceDonuts();
+      }, 60);
+    }
   });
 
   function boot() {

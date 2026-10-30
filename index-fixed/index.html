@@ -351,6 +351,13 @@
     html.night-shift .data th { background: #0d4d2e !important; }
     html.night-shift .btn-primary { filter: saturate(1.1); }
 
+  
+    /* FIX: حذف نوار بزرگ سایدبار موبایل */
+    @media (max-width: 1023px) {
+      #sidebar { display: none !important; }
+      main.flex-1 { margin-right: 0 !important; }
+    }
+
   </style>
 </head>
 <body class="text-slate-100 antialiased">

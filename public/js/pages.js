@@ -61,6 +61,16 @@ Pages.applyDashChartPeriod = function (cperiod, fromAuto) {
     void charts.offsetWidth;
     charts.classList.add('chart-slide-in');
   }
+  // بعد از ورق خوردن، انیمیشن دونات‌ها را دوباره روشن کن
+  try {
+    if (window.UiFinal && typeof window.UiFinal.enhanceDonuts === 'function') {
+      setTimeout(function () { window.UiFinal.enhanceDonuts(); }, 80);
+      setTimeout(function () { window.UiFinal.enhanceDonuts(); }, 400);
+    }
+    if (window.ThemeEngine && typeof window.ThemeEngine.enhanceSpaceCharts === 'function') {
+      setTimeout(function () { window.ThemeEngine.enhanceSpaceCharts(); }, 100);
+    }
+  } catch (eAnim) {}
 };
 
 
