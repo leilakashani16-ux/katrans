@@ -1,9 +1,9 @@
 /**
- * theme-engine.js v2 — تم عمیق بدون کلید تکراری
- * - نوار تم شناور (دسکتاپ همیشه دیده می‌شود)
- * - یک نوار در سایدبار کنار خروج
- * - نوار پایین همیشه
- * - آیکون منو + لودینگ + نمودار زنده متحرک
+ * theme-engine.js v3
+ * - بدون نمودار الکی
+ * - انیمیشن روی نمودارهای واقعی داشبورد
+ * - نوار پایین فقط موبایل + اسکرول کامل همه بخش‌ها
+ * - بدون کلید تکراری
  */
 (function () {
   var KEY = 'katrans_theme_engine';
@@ -20,28 +20,43 @@
     ember: { dashboard:'🔥', entries:'📦', wastes:'🗑️', productions:'⚒️', processings:'🔧', materials:'📦', products:'🍢', transfers:'🚚', stocktake:'📋', personnel:'👷', chat:'💬', reports:'📑', audit:'📜', settings:'⚙️', users:'🔐' }
   };
   var LOAD_ICON = { default:'⏳', night:'🌙', orbit:'🚀', ember:'⚙️' };
-  var LOAD_TEXT = { default:'در حال بارگذاری…', night:'شیفت شب…', orbit:'پرتاب به صفحه…', ember:'جفت‌کردن آچار…' };
-  var animTimer = null;
+  var LOAD_TEXT = { default:'در حال بارگذاری…', night:'شیفت شب…', orbit:'پرتاب…', ember:'آچار…' };
+
+  // منوی کامل موبایل (اسکرول افقی)
+  var MOBILE_NAV = [
+    { page: 'dashboard', label: 'خانه' },
+    { page: 'entries', label: 'ورود' },
+    { page: 'productions', label: 'تولید' },
+    { page: 'materials', label: 'مواد' },
+    { page: 'products', label: 'محصولات' },
+    { page: 'transfers', label: 'ارسال' },
+    { page: 'personnel', label: 'پرسنل' },
+    { page: 'chat', label: 'گفتگو' },
+    { page: 'processings', label: 'فرآوری' },
+    { page: 'wastes', label: 'ضایعات' },
+    { page: 'reports', label: 'گزارش' },
+    { page: 'settings', label: 'بیشتر' }
+  ];
 
   function getTheme() {
     try { return localStorage.getItem(KEY) || 'default'; } catch (e) { return 'default'; }
   }
 
-  function stripAllOld() {
+  function stripJunk() {
     [
       'theme-engine-bar', 'theme-engine-bar-side', 'theme-engine-side',
       'theme-engine-bar-float', 'te-float-themes',
       'soul-theme-bar', 'soul-theme-bar-side', 'soul-theme-sidebar',
-      'orbit-theme-toggle', 'orbit-bottom-nav'
+      'orbit-theme-toggle', 'orbit-bottom-nav',
+      'te-live-charts', 'te-planet-hero'
     ].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.remove();
     });
     document.querySelectorAll('button[onclick*="toggleNightMode"]').forEach(function (b) { b.remove(); });
-    // هر chip سرگردان داخل topbar مخفی
     var top = document.getElementById('mobile-topbar');
     if (top) {
-      top.querySelectorAll('.te-chip, #theme-engine-bar, #theme-engine-side').forEach(function (e) { e.remove(); });
+      top.querySelectorAll('.te-chip, #theme-engine-bar, #theme-engine-side, #theme-engine-bar-side').forEach(function (e) { e.remove(); });
     }
   }
 
@@ -73,8 +88,6 @@
       b.classList.toggle('active', b.getAttribute('data-theme') === id);
     });
     applyIcons(id);
-    ensureHero(id);
-    ensureLiveCharts(id);
     if (!silent && typeof toast === 'function') {
       var t = THEMES.find(function (x) { return x.id === id; });
       toast((t && t.title) || id, 'info');
@@ -128,25 +141,22 @@
     if (old) old.remove();
     var bottom = document.createElement('nav');
     bottom.id = 'te-bottom-nav';
-    var items = [
-      ['dashboard', 'خانه'],
-      ['materials', 'مواد'],
-      ['entries', 'ورود'],
-      ['productions', 'تولید'],
-      ['settings', 'بیشتر']
-    ];
-    items.forEach(function (it) {
+    bottom.setAttribute('aria-label', 'منوی موبایل');
+    MOBILE_NAV.forEach(function (it) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.setAttribute('data-page', it[0]);
-      b.innerHTML = '<span class="ico">•</span><span>' + it[1] + '</span>';
+      b.setAttribute('data-page', it.page);
+      b.innerHTML = '<span class="ico">•</span><span>' + it.label + '</span>';
       b.onclick = function () {
-        if (typeof navigate === 'function') navigate(it[0]);
-        else location.hash = '#' + it[0];
+        document.querySelectorAll('#te-bottom-nav button').forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        if (typeof navigate === 'function') navigate(it.page);
+        else location.hash = '#' + it.page;
       };
       bottom.appendChild(b);
     });
     document.body.appendChild(bottom);
+    applyIcons(getTheme());
   }
 
   function ensureLoader() {
@@ -168,122 +178,83 @@
     if (el) el.classList.remove('show');
   }
 
-  function ensureHero(id) {
-    var hero = document.getElementById('te-planet-hero');
-    if (id !== 'orbit') {
-      if (hero) hero.style.display = 'none';
-      return;
-    }
-    if (!hero) {
-      hero = document.createElement('div');
-      hero.id = 'te-planet-hero';
-      hero.innerHTML = '<div class="te-planet"></div><div class="te-hero-text"><div class="te-hero-title">ارزش موجودی · مدار روح</div><div class="te-hero-value" id="te-hero-value">—</div></div>';
-    }
-    var page = document.getElementById('page-content');
-    if (page && !page.contains(hero)) page.insertBefore(hero, page.firstChild);
-    hero.style.display = 'flex';
-  }
+  /** انیمیشن روی نمودارهای واقعی داشبورد */
+  function animateRealCharts() {
+    var root = document.getElementById('dash-charts');
+    if (!root) return;
 
-  function ensureLiveCharts(id) {
-    var box = document.getElementById('te-live-charts');
-    if (id !== 'orbit' && id !== 'ember') {
-      if (box) box.style.display = 'none';
-      if (animTimer) cancelAnimationFrame(animTimer);
-      return;
-    }
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'te-live-charts';
-      box.innerHTML =
-        '<div class="te-charts-grid">' +
-        '<div class="glass-card te-chart-card"><div class="te-chart-label">نمودار زنده موجودی</div><canvas id="te-chart-line" width="360" height="130"></canvas></div>' +
-        '<div class="glass-card te-chart-card"><div class="te-chart-label">وضعیت زنده</div><canvas id="te-chart-donut" width="180" height="130"></canvas></div>' +
-        '</div>';
-    }
-    var page = document.getElementById('page-content');
-    if (page && !page.contains(box)) {
-      var hero = document.getElementById('te-planet-hero');
-      if (hero && hero.parentNode === page) page.insertBefore(box, hero.nextSibling);
-      else page.insertBefore(box, page.firstChild);
-    }
-    box.style.display = 'block';
-    startAnimCharts(id);
-  }
+    // نوارهای میله‌ای: هر div با width درصدی
+    root.querySelectorAll('[style*="width"]').forEach(function (el, idx) {
+      var st = el.getAttribute('style') || '';
+      if (!/width\s*:\s*[\d.]+%/.test(st)) return;
+      // فقط میله‌های رنگی نازک/پر، نه کل کارت
+      var h = el.offsetHeight;
+      if (h > 40) return;
+      el.classList.add('te-bar-anim');
+      el.style.animationDelay = (idx * 0.05) + 's';
+    });
 
-  function startAnimCharts(id) {
-    if (animTimer) cancelAnimationFrame(animTimer);
-    var line = document.getElementById('te-chart-line');
-    var donut = document.getElementById('te-chart-donut');
-    if (!line || !donut) return;
-    var t0 = performance.now();
-    var color = id === 'ember' ? '#fb923c' : '#22d3ee';
-    var color2 = id === 'ember' ? '#ea580c' : '#a78bfa';
-    function frame(now) {
-      var t = (now - t0) / 1000;
-      var ctx = line.getContext('2d');
-      var w = line.width, h = line.height;
-      ctx.clearRect(0, 0, w, h);
-      ctx.strokeStyle = 'rgba(148,163,184,0.12)';
-      ctx.lineWidth = 1;
-      for (var g = 1; g < 4; g++) {
-        ctx.beginPath(); ctx.moveTo(0, h * g / 4); ctx.lineTo(w, h * g / 4); ctx.stroke();
+    // دونات‌ها: معمولاً یک div با background conic-gradient یا border-radius 50%
+    root.querySelectorAll('div').forEach(function (el) {
+      var st = (el.getAttribute('style') || '') + (el.style && el.style.backgroundImage || '');
+      var bg = el.style.background || el.style.backgroundImage || '';
+      if (/conic-gradient/i.test(st + bg) || /conic-gradient/i.test(el.getAttribute('style') || '')) {
+        el.classList.add('te-donut-anim');
       }
-      ctx.beginPath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 10;
-      for (var x = 0; x < w; x++) {
-        var y = h * 0.55 + Math.sin(x / 42 + t * 1.4) * 20 + Math.sin(x / 16 + t * 2.1) * 9;
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      // بعضی دونات‌ها با کلاس خاص
+      if (el.classList.contains('rounded-full') && el.offsetWidth > 60 && el.offsetWidth < 220) {
+        el.classList.add('te-donut-anim');
       }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      var dx = w * ((t * 0.12) % 1);
-      var dy = h * 0.55 + Math.sin(dx / 42 + t * 1.4) * 20 + Math.sin(dx / 16 + t * 2.1) * 9;
-      ctx.beginPath(); ctx.fillStyle = color; ctx.globalAlpha = 0.3; ctx.arc(dx, dy, 8, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1; ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(dx, dy, 3.5, 0, Math.PI * 2); ctx.fill();
+    });
 
-      var dctx = donut.getContext('2d');
-      var dw = donut.width, dh = donut.height, cx = dw / 2, cy = dh / 2, r = Math.min(cx, cy) - 14;
-      dctx.clearRect(0, 0, dw, dh);
-      var parts = [0.4 + Math.sin(t) * 0.025, 0.27, 0.2, 0.13];
-      var cols = [color, color2, '#64748b', '#334155'];
-      var ang = -Math.PI / 2 + t * 0.2;
-      parts.forEach(function (p, i) {
-        var a2 = ang + p * Math.PI * 2;
-        dctx.beginPath();
-        dctx.strokeStyle = cols[i];
-        dctx.lineWidth = 11;
-        dctx.lineCap = 'round';
-        dctx.arc(cx, cy, r, ang, a2);
-        dctx.stroke();
-        ang = a2;
+    // fallback: اولین دایره بزرگ در هر کارت دونات
+    root.querySelectorAll('.glass-card').forEach(function (card, i) {
+      var circle = card.querySelector('[style*="conic"], .rounded-full');
+      if (circle) {
+        circle.classList.add('te-donut-anim');
+        circle.style.animationDelay = (i * 0.08) + 's';
+      }
+      var bars = card.querySelectorAll('[style*="width"]');
+      bars.forEach(function (bar, j) {
+        if (bar.offsetHeight <= 28) {
+          bar.classList.add('te-bar-anim');
+          bar.style.animationDelay = (j * 0.06) + 's';
+        }
       });
-      dctx.fillStyle = '#e2e8f0';
-      dctx.font = 'bold 18px sans-serif';
-      dctx.textAlign = 'center';
-      dctx.textBaseline = 'middle';
-      dctx.fillText(String(12 + Math.floor(Math.sin(t) * 2)), cx, cy);
-      animTimer = requestAnimationFrame(frame);
-    }
-    animTimer = requestAnimationFrame(frame);
+    });
+  }
+
+  function patchDashboard() {
+    if (typeof Pages === 'undefined' || typeof Pages.dashboard !== 'function') return;
+    if (Pages.dashboard.__teAnim) return;
+    var prev = Pages.dashboard;
+    Pages.dashboard = async function () {
+      var html = await prev.apply(this, arguments);
+      setTimeout(animateRealCharts, 80);
+      setTimeout(animateRealCharts, 400);
+      return html;
+    };
+    Pages.dashboard.__teAnim = true;
   }
 
   function patchNavigate() {
     if (typeof window.navigate !== 'function' || window.navigate.__tePatched) return;
     var orig = window.navigate;
-    window.navigate = async function () {
+    window.navigate = async function (page) {
       var id = getTheme();
       showLoader(id);
       try { return await orig.apply(this, arguments); }
       finally {
-        setTimeout(hideLoader, 300);
+        setTimeout(hideLoader, 280);
         setTimeout(function () {
           applyIcons(getTheme());
-          ensureHero(getTheme());
-          ensureLiveCharts(getTheme());
-        }, 350);
+          var pure = String(page || '').split('?')[0];
+          if (pure === 'dashboard' || pure === '') animateRealCharts();
+          // highlight bottom nav
+          document.querySelectorAll('#te-bottom-nav button').forEach(function (b) {
+            b.classList.toggle('active', b.getAttribute('data-page') === pure);
+          });
+        }, 320);
       }
     };
     window.navigate.__tePatched = true;
@@ -301,26 +272,28 @@
   }
 
   function boot() {
-    stripAllOld();
+    stripJunk();
     ensureLoader();
     injectFloat();
     injectSidebar();
     injectBottom();
     patchNavigate();
     patchBuildNav();
+    patchDashboard();
     if (typeof Pages !== 'undefined') {
       Pages.toggleNightMode = function () {
         apply(getTheme() === 'night' ? 'default' : 'night');
       };
     }
     apply(getTheme(), true);
+    setTimeout(animateRealCharts, 600);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
-  setTimeout(boot, 700);
-  setTimeout(function () { applyIcons(getTheme()); }, 2000);
+  setTimeout(boot, 600);
+  setTimeout(function () { applyIcons(getTheme()); animateRealCharts(); }, 1800);
 
-  window.ThemeEngine = { apply: apply, current: getTheme, list: THEMES };
-  console.log('[theme-engine v2] ready');
+  window.ThemeEngine = { apply: apply, current: getTheme, list: THEMES, animateCharts: animateRealCharts };
+  console.log('[theme-engine v3] real charts + full mobile nav');
 })();
