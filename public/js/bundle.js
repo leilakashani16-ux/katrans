@@ -1840,13 +1840,22 @@ Pages.applyFilter = function (page) {
   if (df) p.set('df', df);
   if (dt) p.set('dt', dt);
   if (q) p.set('q', q);
-  location.hash = page + (p.toString() ? '?' + p.toString() : '');
-  navigate(page);
+  // حفظ cperiod اگر روی داشبورد بود
+  try {
+    const cur = new URLSearchParams((location.hash.split('?')[1] || ''));
+    if (page === 'dashboard' && cur.get('cperiod') && !p.get('cperiod')) {
+      p.set('cperiod', cur.get('cperiod'));
+    }
+  } catch (_) {}
+  const target = page + (p.toString() ? '?' + p.toString() : '');
+  // مهم: navigate باید کل query را بگیرد وگرنه فیلتر پاک می‌شود
+  if (typeof navigate === 'function') navigate(target);
+  else location.hash = '#' + target;
 };
 
 Pages.clearFilter = function (page) {
-  location.hash = page;
-  navigate(page);
+  if (typeof navigate === 'function') navigate(page);
+  else location.hash = '#' + page;
 };
 
 Pages.showEntryForm = async function (id) {
