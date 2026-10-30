@@ -160,8 +160,8 @@
     fx.className = 'mt-3 text-xs text-slate-400';
     fx.innerHTML = '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
       '<input type="checkbox" id="te-ember-leaves" style="width:16px;height:16px" />' +
-      '<span>اخگر: برگ‌ریزان پاییزی به‌جای جرقه</span></label>' +
-      '<p class="mt-1 opacity-70">مدار روح: ستاره‌های چشمک‌زن خودکار فعال است</p>';
+      '<span>اخگر: برگ چنار / پاییزی به‌جای جرقه</span></label>' +
+      '<p class="mt-1 opacity-70">مدار روح: فضای کهکشانی + ستاره و سحابی</p>';
     panel.appendChild(fx);
     form.appendChild(panel);
     setTimeout(function () {

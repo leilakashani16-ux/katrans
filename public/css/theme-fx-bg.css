@@ -1,4 +1,4 @@
-/* پس‌زمینه زنده تم‌ها — سبک، فقط فرانت */
+/* پس‌زمینه زنده تم‌ها v2 */
 
 #te-fx-bg {
   position: fixed;
@@ -12,8 +12,7 @@ html.te-orbit #te-fx-bg,
 html.te-ember #te-fx-bg {
   display: block;
 }
-/* محتوا بالای پس‌زمینه */
-#app, #login-screen, #te-bottom-nav, #mobile-topbar, #modal-root, #toast {
+#app, #login-screen, #mobile-topbar {
   position: relative;
   z-index: 1;
 }
@@ -25,38 +24,37 @@ html.te-ember #te-fx-bg {
   height: 100%;
   display: block;
 }
-
-/* لایه‌های CSS کمکی */
 #te-fx-bg .te-fx-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-/* —— مدار روح: مه کهکشانی —— */
+/* مدار روح: عمق کهکشان */
 html.te-orbit #te-fx-bg .te-fx-nebula {
   background:
-    radial-gradient(ellipse 90% 60% at 20% 10%, rgba(99,102,241,0.22), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 85% 80%, rgba(34,211,238,0.12), transparent 50%),
-    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(167,139,250,0.1), transparent 60%);
-  animation: teNebula 14s ease-in-out infinite alternate;
+    radial-gradient(ellipse 100% 70% at 15% -5%, rgba(99,102,241,0.28), transparent 55%),
+    radial-gradient(ellipse 80% 50% at 90% 20%, rgba(34,211,238,0.14), transparent 50%),
+    radial-gradient(ellipse 60% 45% at 50% 90%, rgba(167,139,250,0.16), transparent 55%),
+    radial-gradient(ellipse 40% 30% at 70% 60%, rgba(236,72,153,0.06), transparent 50%);
+  animation: teNebula 16s ease-in-out infinite alternate;
 }
 @keyframes teNebula {
-  from { opacity: 0.75; transform: scale(1); }
-  to { opacity: 1; transform: scale(1.05); }
+  from { opacity: 0.7; transform: scale(1) translate(0,0); }
+  to { opacity: 1; transform: scale(1.06) translate(-1%, 1%); }
 }
 
-/* —— اخگر: شعله نرم پایین صفحه —— */
+/* اخگر */
 html.te-ember #te-fx-bg .te-fx-flame-base {
   background:
-    radial-gradient(ellipse 100% 45% at 50% 100%, rgba(234,88,12,0.35), transparent 70%),
-    radial-gradient(ellipse 60% 30% at 30% 100%, rgba(251,146,60,0.25), transparent 65%),
-    radial-gradient(ellipse 50% 28% at 75% 100%, rgba(220,38,38,0.2), transparent 60%);
+    radial-gradient(ellipse 100% 48% at 50% 100%, rgba(234,88,12,0.38), transparent 70%),
+    radial-gradient(ellipse 55% 32% at 25% 100%, rgba(251,146,60,0.28), transparent 65%),
+    radial-gradient(ellipse 50% 30% at 78% 100%, rgba(220,38,38,0.22), transparent 60%);
   animation: teFlamePulse 3.5s ease-in-out infinite alternate;
 }
 @keyframes teFlamePulse {
   from { opacity: 0.7; transform: translateY(4px) scaleY(0.95); }
-  to { opacity: 1; transform: translateY(0) scaleY(1.05); }
+  to { opacity: 1; transform: translateY(0) scaleY(1.06); }
 }
 
 @media (prefers-reduced-motion: reduce) {
