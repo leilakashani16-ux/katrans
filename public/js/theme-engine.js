@@ -54,7 +54,7 @@
     var on = true;
     try {
       if (window.Api) {
-        var s = await Api.request('settings').catch(function () { return null; });
+        var s = await (Api.getAll ? Api.getAll('settings') : Api.request('settings')).catch(function () { return null; });
         if (s) {
           localStorage.setItem('kitchen_settings', JSON.stringify(s));
           if (s.alert_enabled === false) on = false;

@@ -476,6 +476,8 @@
   };
 
   Pages.pollChat = async function () {
+    if (window.__chatPollBusy) return;
+    window.__chatPollBusy = true;
     try {
       var all = await loadAllRaw();
       var user = me();
@@ -551,6 +553,8 @@
       }
     } catch (e) {
       console.warn('chat poll', e);
+    } finally {
+      window.__chatPollBusy = false;
     }
   };
 
@@ -587,21 +591,35 @@
     }
   } catch (_) {}
 
+  function isLoggedIn() {
+    try {
+      if (window.Auth && Auth.currentUser) return true;
+      var s = localStorage.getItem('kitchen_session');
+      return !!(s && s.length > 5);
+    } catch (_) {
+      return false;
+    }
+  }
+
   if (!window.__chatPollStartedV2) {
     window.__chatPollStartedV2 = true;
     setInterval(function () {
-      if (document.visibilityState === 'visible') Pages.pollChat();
+      if (document.visibilityState !== 'visible') return;
+      if (!isLoggedIn()) return;
+      // خارج از صفحه چت فقط بج را سبک چک کن (همان poll، ولی نه قبل از لاگین)
+      Pages.pollChat();
     }, POLL_MS);
     document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible') Pages.pollChat();
+      if (document.visibilityState === 'visible' && isLoggedIn()) Pages.pollChat();
     });
   }
 
+  // اولین poll را عقب بینداز و فقط بعد از لاگین — لود اولیه را سنگین نکن
   setTimeout(function () {
     try {
-      Pages.pollChat();
+      if (isLoggedIn()) Pages.pollChat();
     } catch (_) {}
-  }, 2500);
+  }, 8000);
 
-  console.log('[chat] phase-1 channels ready');
+  console.log('[chat] phase-1 channels ready + deferred poll');
 })();
