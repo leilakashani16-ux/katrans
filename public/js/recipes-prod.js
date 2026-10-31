@@ -57,7 +57,7 @@
         '<form id="recipe-form" class="space-y-3" onsubmit="return false;">' +
         '<div class="grid grid-cols-2 gap-2">' +
         '<div><label class="text-xs text-slate-400">ضریب پخت (اختیاری)</label>' +
-        '<input name="yield_factor" id="rc-yield" type="number" step="0.001" class="input-field" value="' +
+        '<input name="yield_factor" id="rc-yield" type="number" step="any" class="input-field" value="' +
         (rec.yield_factor != null && rec.yield_factor !== '' ? rec.yield_factor : '') +
         '" placeholder="مثلاً ۲.۴۵ برای برنج" />' +
         '<p class="text-[10px] text-slate-500 mt-1">خروجی ≈ جمع مواد × ضریب (وقتی وزن نمی‌کنید)</p></div>' +
@@ -87,7 +87,7 @@
         matOpts +
         '</select></div>' +
         '<div><label class="text-[10px] text-slate-500">مقدار</label>' +
-        '<input data-f="qty" type="number" step="0.001" min="0" class="input-field text-sm" value="' +
+        '<input data-f="qty" type="number" step="any" min="0" class="input-field text-sm" value="' +
         (qty != null ? qty : '') +
         '" /></div>' +
         '<div><button type="button" class="btn-ghost text-xs text-red-400 w-full">حذف</button></div>';
@@ -335,10 +335,10 @@
         '</select></div></div>' +
         '<div id="prod-single-block">' +
         '<div class="grid grid-cols-2 gap-3">' +
-        '<div><label class="text-xs text-slate-400">تعداد / خروجی</label><input name="quantity" id="prod-qty" type="number" step="0.001" class="input-field" value="' +
+        '<div><label class="text-xs text-slate-400">تعداد / خروجی</label><input name="quantity" id="prod-qty" type="number" step="any" class="input-field" value="' +
         (item.quantity || '') +
         '" /></div>' +
-        '<div><label class="text-xs text-slate-400">وزن مصرفی ماده (کیلو)</label><input name="material_weight" id="prod-weight" type="number" step="0.001" class="input-field" value="' +
+        '<div><label class="text-xs text-slate-400">وزن مصرفی ماده (کیلو)</label><input name="material_weight" id="prod-weight" type="number" step="any" class="input-field" value="' +
         (item.material_weight || '') +
         '" /></div></div>' +
         '<div><label class="text-xs text-slate-400">ماده اولیه</label><input name="material_name" id="prod-mat" class="input-field" value="' +
@@ -352,7 +352,7 @@
         '<button type="button" class="btn-ghost text-xs mt-1" id="prod-add-mat">+ ماده اضافه</button></div>' +
         '<div class="grid grid-cols-2 gap-3">' +
         '<div><label class="text-xs text-slate-400">خروجی واقعی / نهایی (کیلو یا واحد)</label>' +
-        '<input id="prod-qty-multi" type="number" step="0.001" class="input-field" value="' +
+        '<input id="prod-qty-multi" type="number" step="any" class="input-field" value="' +
         (item.quantity || '') +
         '" placeholder="مثلاً ۴۶" />' +
         '<p class="text-[10px] text-slate-500 mt-1">اگر وزن کردید همین را بزنید</p></div>' +
@@ -383,7 +383,7 @@
         '<div><label class="text-xs text-slate-400">تعداد مانده</label><input name="remainder_count" type="number" step="0.01" class="input-field" value="' +
         (item.remainder_count || 0) +
         '" /></div>' +
-        '<div><label class="text-xs text-slate-400">وزن مانده</label><input name="remainder_weight" type="number" step="0.001" class="input-field" value="' +
+        '<div><label class="text-xs text-slate-400">وزن مانده</label><input name="remainder_weight" type="number" step="any" class="input-field" value="' +
         (item.remainder_weight || 0) +
         '" /></div></div>' +
         '<div><label class="text-xs text-slate-400">توضیحات</label><textarea name="notes" class="input-field" rows="2">' +
@@ -434,19 +434,35 @@
     function addRecipeRow(name, qty) {
       var div = document.createElement('div');
       div.className = 'pr-row grid grid-cols-5 gap-2 items-end';
+      var qv = qty != null && qty !== '' ? qty : '';
+      var base = qv !== '' ? Number(qv) : 0;
       div.innerHTML =
         '<div class="col-span-3"><label class="text-[10px] text-slate-500">ماده</label>' +
         matSelectHtml(name || '') +
         '</div>' +
         '<div><label class="text-[10px] text-slate-500">مقدار</label>' +
-        '<input data-f="qty" type="number" step="0.001" min="0" class="input-field text-sm" value="' +
-        (qty != null && qty !== '' ? qty : '') +
+        '<input data-f="qty" data-base-qty="' + base + '" type="number" step="any" min="0" class="input-field text-sm" value="' +
+        qv +
         '" /></div>' +
         '<div><button type="button" class="btn-ghost text-xs text-red-400 w-full">✕</button></div>';
       recipeRows.appendChild(div);
       div.querySelector('button').onclick = function () {
         div.remove();
       };
+    }
+
+    function scaleRecipeRowsByOutput() {
+      var out = Number(qtyMulti && qtyMulti.value);
+      if (!out || out <= 0) return;
+      document.querySelectorAll('#prod-recipe-rows .pr-row [data-f="qty"]').forEach(function (inp) {
+        var base = Number(inp.getAttribute('data-base-qty'));
+        if (!isNaN(base) && base > 0) {
+          // base = مقدار برای ۱ واحد خروجی
+          var scaled = base * out;
+          // تا ۶ رقم اعشار بدون حذف مقادیر خیلی کوچک ادویه
+          inp.value = String(Math.round(scaled * 1e6) / 1e6);
+        }
+      });
     }
 
     function fillRecipeRows(productName, fromConsumptions) {
@@ -530,6 +546,11 @@
     };
 
     updateMode();
+
+    if (qtyMulti) {
+      qtyMulti.addEventListener('input', scaleRecipeRowsByOutput);
+      qtyMulti.addEventListener('change', scaleRecipeRowsByOutput);
+    }
 
     document.getElementById('prod-form').onsubmit = async function (ev) {
       ev.preventDefault();
