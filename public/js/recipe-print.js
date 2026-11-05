@@ -103,11 +103,11 @@
         '<div class="sum">' +
         '<div>جمع هزینه مواد: <b>' +
         fmtPrice(data.total) +
-        ' تومان</b></div>' +
+        ' ریال</b></div>' +
         (data.yield_factor
           ? '<div>هزینه هر واحد خروجی: <b>' +
             fmtPrice(data.total / data.yield_factor) +
-            ' تومان</b></div>'
+            ' ریال</b></div>'
           : '') +
         '</div>';
     }

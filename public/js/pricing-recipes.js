@@ -91,7 +91,7 @@
 
     var matOpts = materials
       .map(function (m) {
-        var p = m.last_buy_price != null ? ' · ' + fmtPrice(m.last_buy_price) + 'ت' : '';
+        var p = m.last_buy_price != null ? ' · ' + fmtPrice(m.last_buy_price) + 'ر' : '';
         return '<option value="' + m.name + '">' + m.name + (m.unit ? ' (' + m.unit + ')' : '') + p + '</option>';
       })
       .join('');
@@ -147,9 +147,9 @@
         }
       });
       var yf = Number(document.getElementById('rc-yield').value) || 0;
-      document.getElementById('rc-cost-total').textContent = total ? fmtPrice(total) + ' تومان' : '—';
+      document.getElementById('rc-cost-total').textContent = total ? fmtPrice(total) + ' ریال' : '—';
       document.getElementById('rc-cost-unit').textContent =
-        total && yf > 0 ? fmtPrice(total / yf) + ' تومان' : total ? fmtPrice(total) + ' (بدون ضریب)' : '—';
+        total && yf > 0 ? fmtPrice(total / yf) + ' ریال' : total ? fmtPrice(total) + ' (بدون ضریب)' : '—';
       var w = document.getElementById('rc-cost-warn');
       if (w) {
         if (missing) w.classList.remove('hidden');

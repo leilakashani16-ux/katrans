@@ -1,0 +1,16 @@
+کاترانس — از آخرین main ریپو leilakashani16-ux/katrans
+
+مسیرها دقیقاً مثل ریپو:
+
+  public/index.html
+  public/js/app.js
+  public/js/dish-cost.js          (جدید)
+  public/js/currency-rial.js      (جدید)
+  public/js/pricing-recipes.js    (تومان→ریال)
+  public/js/recipe-print.js       (تومان→ریال)
+  public/js/materials-price.js    (همان ریپو — قبلاً ریال)
+
+جایگزین کن → commit/push → Deploy Cloudflare → Ctrl+Shift+R
+
+منو ادمین: بهای فروشگاهی
+واحد بهای رسپی و منو: ریال
