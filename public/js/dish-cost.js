@@ -283,6 +283,48 @@
   setTimeout(injectNav, 400);
   setTimeout(injectNav, 1200);
 
+
+  // موبایل: تب را داخل «بیشتر» نوار پایین نشان بده
+  function injectMobileMore() {
+    try {
+      // اگر ui-final لود شده و MORE_PAGES در closure است، از روی DOM sheet بعدی کافی است؛
+      // این‌جا با monkey-patch روی open اگر در window باشد کار می‌کنیم + observer
+      var moreBtn = document.querySelector('#te-bottom-nav button[data-page="more"]');
+      if (!moreBtn) return;
+      if (moreBtn.__dishCostHook) return;
+      moreBtn.__dishCostHook = true;
+      var orig = moreBtn.onclick;
+      moreBtn.onclick = function (ev) {
+        if (typeof orig === 'function') orig.call(this, ev);
+        setTimeout(function () {
+          var list = document.getElementById('te-more-list');
+          if (!list) return;
+          if (list.querySelector('[data-go="dishCost"]')) return;
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'te-more-item';
+          btn.setAttribute('data-go', 'dishCost');
+          btn.style.cssText = 'display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;background:rgba(30,41,59,0.85);border:1px solid rgba(71,85,105,0.45);border-radius:14px;color:#e2e8f0;font-size:0.95rem;margin-bottom:8px;cursor:pointer;text-align:right';
+          btn.innerHTML = '<span style="font-size:1.25rem">💰</span><span style="flex:1;font-weight:600">بهای فروشگاهی</span><span style="opacity:.4">‹</span>';
+          btn.onclick = function () {
+            try { closeModal(); } catch (e) {}
+            if (typeof navigate === 'function') navigate('dishCost');
+            else location.hash = '#dishCost';
+          };
+          // بعد از محصولات اگر بود
+          var prod = list.querySelector('[data-go="products"]');
+          if (prod && prod.parentNode) prod.parentNode.insertBefore(btn, prod.nextSibling);
+          else list.insertBefore(btn, list.firstChild);
+        }, 50);
+      };
+    } catch (e) {
+      console.warn('mobile more dishCost', e);
+    }
+  }
+  injectMobileMore();
+  setTimeout(injectMobileMore, 800);
+  setTimeout(injectMobileMore, 2000);
+
   window.DishCost = {
     GARDENIA_DISHES: GARDENIA_DISHES,
     ensureDishProducts: ensureDishProducts,

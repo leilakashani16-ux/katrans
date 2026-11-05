@@ -19,7 +19,7 @@
     { page: 'more', label: 'بیشتر', icon: '⋯' }
   ];
   // chat رفت روی نوار اصلی — از more حذف می‌شود تا تکراری نباشد
-  var MORE_PAGES = ['products', 'wastes', 'processings', 'reports', 'settings', 'users', 'stocktake', 'audit'];
+  var MORE_PAGES = ['products', 'dishCost', 'wastes', 'processings', 'reports', 'settings', 'users', 'stocktake', 'audit'];
 
   function stripOldNav() {
     var old = document.getElementById('te-bottom-nav');
@@ -29,6 +29,8 @@
   }
 
   var MORE_LABELS = {
+    products: { icon: '🍢', label: 'محصولات' },
+    dishCost: { icon: '💰', label: 'بهای فروشگاهی' },
     wastes: { icon: '🗑️', label: 'ضایعات' },
     processings: { icon: '🔄', label: 'فرآوری' },
     chat: { icon: '💬', label: 'گفتگو' },
