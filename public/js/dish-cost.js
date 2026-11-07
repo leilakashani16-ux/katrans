@@ -331,4 +331,59 @@
     loadCostRows: loadCostRows,
     CURRENCY: RIAL
   };
+
+
+  // UX: wrap dishCost page to add form + search + no import
+  (function patchDishCostPage() {
+    function wait() {
+      if (!window.Pages || !Pages.dishCost) return setTimeout(wait, 200);
+      if (Pages.dishCost.__uxAdd) return;
+      var orig = Pages.dishCost;
+      Pages.dishCost = async function () {
+        var html = await orig.apply(this, arguments);
+        if (typeof html !== 'string') return html;
+        html = html.replace(/ایمپورت[^<]*<\/button>/g, '');
+        html = html.replace(/ثبت لیست[^<]*<\/button>/g, '');
+        var form =
+          '<div class="glass-card rounded-2xl p-4 mb-4">' +
+          '<div class="flex flex-wrap gap-2 items-end">' +
+          '<div style="flex:1;min-width:110px"><label class="text-xs text-slate-400">کد</label>' +
+          '<input id="dish-add-code" class="input-field" placeholder="G044" /></div>' +
+          '<div style="flex:2;min-width:150px"><label class="text-xs text-slate-400">نام غذا</label>' +
+          '<input id="dish-add-name" class="input-field" placeholder="نام محصول" /></div>' +
+          '<button type="button" class="btn-primary" onclick="Pages.addDishProduct && Pages.addDishProduct()">+ افزودن به لیست فروشگاهی</button>' +
+          '</div>' +
+          '<div class="mt-3"><input id="dish-search" class="input-field" placeholder="جستجو کد یا نام در لیست..." oninput="Pages.filterDishList && Pages.filterDishList(this.value)" /></div>' +
+          '</div>';
+        // insert after first header block
+        html = html.replace(/(<\/div>\s*<div class="glass-card)/, '</div>' + form + '<div class="glass-card');
+        return html;
+      };
+      Pages.dishCost.__uxAdd = true;
+      Pages.addDishProduct = async function () {
+        var code = (document.getElementById('dish-add-code') || {}).value || '';
+        var name = (document.getElementById('dish-add-name') || {}).value || '';
+        code = code.trim(); name = name.trim();
+        if (!code || !name) return toast('کد و نام الزامی است', 'error');
+        try {
+          await Api.add('products', {
+            code: code, name: name, weight_per_unit: 1,
+            description: 'منو فروشگاهی گاردنیا | واحد بها: ریال',
+            remainder_type: 'حمل به روز بعد', active: 1
+          });
+          toast('اضافه شد', 'success');
+          navigate('dishCost');
+        } catch (e) { toast(e.message || 'خطا', 'error'); }
+      };
+      Pages.filterDishList = function (q) {
+        q = (q || '').toLowerCase();
+        document.querySelectorAll('[data-dish-row], .dish-cost-row, .glass-card [onclick*="dishCostToggle"]').forEach(function (el) {
+          var t = (el.textContent || '').toLowerCase();
+          el.style.display = !q || t.indexOf(q) >= 0 ? '' : 'none';
+        });
+      };
+    }
+    wait();
+  })();
+
 })();

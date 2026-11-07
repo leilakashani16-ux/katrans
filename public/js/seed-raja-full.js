@@ -199,7 +199,7 @@
   Pages.products = async function () {
     var html = await _prod();
     if (Auth.isAdmin()) {
-      html = '<div class="mb-3"><button type="button" class="btn-secondary text-sm" onclick="Pages.importRajaRecipes()">ایمپورت کامل راجا (کد صحیح)</button></div>' + html;
+      html = '<div class="mb-3"><button type="button" class="btn-secondary text-sm" onclick="Pages.importRajaRecipes()" style="display:none">ایمپورت کامل راجا (کد صحیح)</button></div>' + html;
     }
     return html;
   };

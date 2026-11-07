@@ -36,10 +36,11 @@
   }
 
   var BTN_HTML =
-    '<button type="button" class="btn-secondary text-sm" id="btn-org-sync" onclick="Pages.syncOrgMaterials()">ورود از اکسل اداره</button>' +
+    '<button type="button" class="btn-secondary text-sm" id="btn-org-sync" onclick="Pages.syncOrgMaterials()" style="display:none">ورود از اکسل اداره</button>' +
     '<button type="button" class="btn-secondary text-sm" id="btn-org-export" onclick="Pages.exportOrgExcel()">خروجی برای اداره</button>';
 
-  function injectIntoHtml(html) {
+  function injectIntoHtml(html) { if (true) return html; // UX: دکمه اکسل اداره حذف شد
+
     if (!html || html.indexOf('btn-org-sync') >= 0) return html;
     // داخل ردیف دکمه‌های بالای مواد
     if (html.indexOf('materialPeriodForm') >= 0) {
