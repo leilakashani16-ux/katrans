@@ -1,31 +1,36 @@
 /**
- * Service Worker — شبکه اول، همیشه Response معتبر
- * باگ قبلی: caches.match بدون نتیجه → undefined → TypeError و کل JSها fail
+ * Service Worker — شبکه اول برای API، کش برای استاتیک، آفلاین پایدار
  */
-const CACHE = 'ansar-v5-safe';
+const CACHE = 'katrans-offline-v2';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.json',
   './css/app-core.css',
-  './js/db.js',
-  './js/api.js',
-  './js/auth.js',
-  './js/utils.js',
-  './js/pages.js',
-  './js/staff-meals.js',
-  './js/branch-stock.js',
-  './js/recipes-prod.js',
+  './js/bundle.js',
   './js/app.js',
+  './js/api-fast.js',
+  './js/offline-sync.js',
+  './js/ui-ux-patch.js',
+  './js/dish-cost.js',
+  './js/materials-price.js',
+  './js/pricing-recipes.js',
+  './js/recipe-print.js',
+  './js/processing.js',
+  './js/processing-plus.js',
+  './js/invoice-entries.js',
+  './js/org-sync.js',
+  './js/theme-engine.js',
+  './js/ui-final.js',
+  './js/currency-rial.js',
+  './js/charts-fx.js',
+  './js/dashboard-charts-mix.js',
   './logo-ansar.png',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './icons/icon-96.png'
 ];
-
-function okEmpty() {
-  return new Response('', { status: 503, statusText: 'Offline' });
-}
 
 function offlineJson() {
   return new Response(JSON.stringify({ ok: false, error: 'offline', code: 'SW_OFFLINE' }), {
@@ -36,107 +41,60 @@ function offlineJson() {
 
 self.addEventListener('install', function (e) {
   e.waitUntil(
-    caches
-      .open(CACHE)
-      .then(function (cache) {
-        return Promise.all(
-          PRECACHE.map(function (url) {
-            return cache.add(url).catch(function (err) {
-              console.warn('precache skip', url, err);
-            });
-          })
-        );
-      })
-      .then(function () {
-        return self.skipWaiting();
-      })
-      .catch(function (err) {
-        console.warn('sw install', err);
-        return self.skipWaiting();
-      })
+    caches.open(CACHE).then(function (cache) {
+      return Promise.all(
+        PRECACHE.map(function (url) {
+          return cache.add(url).catch(function (err) {
+            console.warn('precache skip', url, err && err.message);
+          });
+        })
+      );
+    }).then(function () { return self.skipWaiting(); })
   );
 });
 
 self.addEventListener('activate', function (e) {
   e.waitUntil(
-    caches
-      .keys()
-      .then(function (keys) {
-        return Promise.all(
-          keys
-            .filter(function (k) {
-              return k !== CACHE;
-            })
-            .map(function (k) {
-              return caches.delete(k);
-            })
-        );
-      })
-      .then(function () {
-        return self.clients.claim();
-      })
+    caches.keys().then(function (keys) {
+      return Promise.all(keys.filter(function (k) { return k !== CACHE; }).map(function (k) { return caches.delete(k); }));
+    }).then(function () { return self.clients.claim(); })
   );
 });
 
 self.addEventListener('fetch', function (e) {
-  if (e.request.method !== 'GET') return;
+  var req = e.request;
+  if (req.method !== 'GET') return;
 
   var url;
-  try {
-    url = new URL(e.request.url);
-  } catch (_) {
-    return;
-  }
-
+  try { url = new URL(req.url); } catch (_) { return; }
   if (url.origin !== self.location.origin) return;
 
+  // API: network only (offline handled in app offline-sync.js)
   if (url.pathname.indexOf('/api') === 0) {
     e.respondWith(
-      fetch(e.request)
-        .then(function (res) {
-          return res || offlineJson();
-        })
-        .catch(function () {
-          return offlineJson();
-        })
+      fetch(req).then(function (res) { return res; }).catch(function () { return offlineJson(); })
     );
     return;
   }
 
-  var path = url.pathname;
-  var isCritical =
-    path === '/' ||
-    path.endsWith('.html') ||
-    path.endsWith('.js') ||
-    path.endsWith('.css') ||
-    path.endsWith('manifest.json');
-
+  // Static: stale-while-revalidate
   e.respondWith(
-    fetch(e.request)
-      .then(function (res) {
-        if (res && res.ok) {
-          var clone = res.clone();
-          caches.open(CACHE).then(function (c) {
-            try {
-              c.put(e.request, clone);
-            } catch (_) {}
-          });
-        }
-        return res || okEmpty();
-      })
-      .catch(function () {
-        return caches.match(e.request).then(function (cached) {
-          if (cached) return cached;
-          if (isCritical) {
-            return new Response('/* offline or missing: ' + path + ' */', {
-              status: 503,
-              headers: {
-                'Content-Type': path.endsWith('.css') ? 'text/css' : 'application/javascript'
-              }
-            });
+    caches.open(CACHE).then(function (cache) {
+      return cache.match(req).then(function (cached) {
+        var network = fetch(req).then(function (res) {
+          if (res && res.ok) {
+            try { cache.put(req, res.clone()); } catch (_) {}
           }
-          return okEmpty();
+          return res;
+        }).catch(function () {
+          return cached || caches.match('./index.html') || new Response('آفلاین', { status: 503 });
         });
-      })
+        return cached || network;
+      });
+    })
   );
+});
+
+self.addEventListener('message', function (e) {
+  if (e.data === 'skipWaiting') self.skipWaiting();
 });
