@@ -9,7 +9,7 @@
   'use strict';
 
   var DB_NAME = 'katrans-offline-v1';
-  var DB_VER = 1;
+  var DB_VER = 2;
   var STORE_CACHE = 'api_cache';
   var STORE_QUEUE = 'outbox';
   var idb = null;
@@ -26,6 +26,9 @@
         }
         if (!db.objectStoreNames.contains(STORE_QUEUE)) {
           db.createObjectStore(STORE_QUEUE, { keyPath: 'id', autoIncrement: true });
+        }
+        if (!db.objectStoreNames.contains('meta')) {
+          db.createObjectStore('meta', { keyPath: 'key' });
         }
       };
       req.onsuccess = function (e) {
@@ -114,7 +117,43 @@
     op.status = 'pending';
     var row = await idbPut(STORE_QUEUE, op);
     updateBanner();
+    registerBackgroundSync();
     return row;
+  }
+
+  function registerBackgroundSync() {
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.ready.then(function (reg) {
+        if (reg.sync && reg.sync.register) {
+          reg.sync.register('katrans-outbox-sync').then(function () {
+            console.log('[offline] background sync registered');
+          }).catch(function (e) {
+            console.warn('[offline] sync register', e);
+          });
+        }
+        // always also ping SW if available
+        if (reg.active) {
+          reg.active.postMessage({ type: 'SYNC_OUTBOX' });
+        }
+      });
+    } catch (e) {
+      console.warn('bg sync', e);
+    }
+  }
+
+  function saveTokenToSW(token) {
+    try {
+      if (!token) return;
+      idbPut('meta', { key: 'auth', token: token, t: Date.now() }).catch(function () {});
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'SAVE_TOKEN', token: token });
+      } else if (navigator.serviceWorker) {
+        navigator.serviceWorker.ready.then(function (reg) {
+          if (reg.active) reg.active.postMessage({ type: 'SAVE_TOKEN', token: token });
+        });
+      }
+    } catch (e) {}
   }
 
   function toastMsg(msg, type) {
@@ -514,10 +553,49 @@
   function boot() {
     patchApi();
     updateBanner();
+    
+    // persist token for SW background sync
+    try {
+      var tok = localStorage.getItem('kitchen_token');
+      if (tok) saveTokenToSW(tok);
+      if (window.Api && Api.loadToken) {
+        var _lt = Api.loadToken.bind(Api);
+        Api.loadToken = function () {
+          var t = _lt();
+          if (t) saveTokenToSW(t);
+          return t;
+        };
+      }
+      if (window.Api && Api.login) {
+        var _login = Api.login.bind(Api);
+        Api.login = async function () {
+          var r = await _login.apply(this, arguments);
+          if (r && r.token) saveTokenToSW(r.token);
+          else if (Api.token) saveTokenToSW(Api.token);
+          return r;
+        };
+      }
+    } catch (e) {}
+
+    // listen for SW sync completion
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('message', function (ev) {
+        var d = ev.data || {};
+        if (d.type === 'OUTBOX_SYNCED') {
+          updateBanner();
+          if (d.done > 0) {
+            toastMsg(d.done + ' عملیات آفلاین همگام شد', 'success');
+            try { if (Api.invalidateCache) Api.invalidateCache(); } catch (e) {}
+          }
+        }
+      });
+    }
+
     window.addEventListener('online', function () {
       Api.online = true;
       updateBanner();
       toastMsg('اینترنت وصل شد — همگام‌سازی...', 'info');
+      registerBackgroundSync();
       syncOutbox();
       warmCache();
     });
